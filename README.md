@@ -1,0 +1,1 @@
+# pingpong_aicup_2026
