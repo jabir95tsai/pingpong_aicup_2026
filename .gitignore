@@ -1,0 +1,18 @@
+# Data files (too large for git)
+data/*.csv
+
+# Model artifacts
+models/*.pkl
+models/*.pt
+models/*.npz
+
+# CatBoost logs
+catboost_info/
+src/catboost_info/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Claude internal
+.claude/
