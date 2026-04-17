@@ -275,10 +275,13 @@ def prepare_rallies(df, is_train=True):
     for rally_uid, group in df.groupby("rally_uid", sort=False):
         group = group.sort_values("strikeNumber")
 
-        # Build cat array
+        # Build cat array.
+        # Shift all values by +1 so that the real class 0 becomes 1.
+        # This keeps padding_idx=0 (used in collate_fn) distinct from every
+        # legitimate token, preventing class-0 embeddings from being frozen.
         cat = np.zeros((len(group), n_cat), dtype=np.int64)
         for i, (col, _) in enumerate(CAT_FIELDS):
-            cat[:, i] = group[col].values.astype(int)
+            cat[:, i] = group[col].values.astype(int) + 1  # 0-pad safe shift
 
         # Build cont array
         cont = np.zeros((len(group), n_cont), dtype=np.float32)
@@ -505,6 +508,7 @@ def main():
     # ========================================
     # CV LOOP
     # ========================================
+    fold_best_epochs = []  # collect per-fold best epoch for final training schedule
     for fold, (tr_rally_idx, val_rally_idx) in enumerate(all_splits):
         t_fold = time.time()
         print(f"\n{'='*60}")
@@ -599,6 +603,7 @@ def main():
             oof_sgp[val_sample_indices] = sgp_probs
 
         print(f"\n  Fold {fold+1} best: OV={best_ov:.4f} @ epoch {best_epoch} ({(time.time()-t_fold)/60:.1f} min)")
+        fold_best_epochs.append(best_epoch)
 
         # Save best model
         os.makedirs(MODEL_DIR, exist_ok=True)
@@ -659,8 +664,11 @@ def main():
     ).to(DEVICE)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    # Train for best_epoch rounds (from CV)
-    final_epochs = max(best_epoch + 2, n_epochs // 2) if not is_smoke else 5
+    # Use the mean best epoch across all CV folds so the schedule is not
+    # skewed by whichever fold happened to run last.
+    mean_best_epoch = int(round(float(np.mean(fold_best_epochs)))) if fold_best_epochs else n_epochs // 2
+    final_epochs = max(mean_best_epoch + 2, n_epochs // 2) if not is_smoke else 5
+    print(f"\n  Final training: {final_epochs} epochs (mean CV best={mean_best_epoch}, folds={fold_best_epochs})")
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=final_epochs, eta_min=1e-5)
 
     action_loss_fn = FocalLoss(gamma=2.0, weight=action_weights_t)
