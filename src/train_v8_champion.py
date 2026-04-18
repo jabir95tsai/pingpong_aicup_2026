@@ -209,13 +209,17 @@ def main():
     oof_pt = {m: np.zeros((n_samples, N_POINT)) for m in ["CB", "XGB", "LGB"]}
     oof_srv = {m: np.zeros(n_samples) for m in ["CB", "XGB", "LGB"]}
 
+    # Cache per-fold metadata needed in Pass 2 (tiny: just indices + labels)
+    fold_cache = []
+
     # ========================================
-    # CV LOOP
+    # PASS 1: ACTION MODELS
+    # Trains all action models, populates oof_act fully before Pass 2.
     # ========================================
     for fold, (tr_idx, val_idx) in enumerate(all_splits):
         t_fold = time.time()
         print(f"\n{'='*60}")
-        print(f"  FOLD {fold+1}/{len(all_splits)} (train={len(tr_idx)}, val={len(val_idx)})")
+        print(f"  [Pass 1] FOLD {fold+1}/{len(all_splits)} — action models")
         print(f"{'='*60}")
 
         tr_rallies = set(sample_rally_uids[tr_idx])
@@ -237,9 +241,12 @@ def main():
 
         X_tr = np.nan_to_num(feat_tr[fnames].values.astype(np.float32), nan=0, posinf=0, neginf=0)
         X_val = np.nan_to_num(feat_val[fnames].values.astype(np.float32), nan=0, posinf=0, neginf=0)
-        ya_tr, ya_val = feat_tr["y_actionId"].values, feat_val["y_actionId"].values
-        yp_tr, yp_val = feat_tr["y_pointId"].values, feat_val["y_pointId"].values
-        ys_tr, ys_val = feat_tr["y_serverGetPoint"].values, feat_val["y_serverGetPoint"].values
+        ya_tr = feat_tr["y_actionId"].values
+        ya_val = feat_val["y_actionId"].values
+        yp_tr = feat_tr["y_pointId"].values
+        yp_val = feat_val["y_pointId"].values
+        ys_tr = feat_tr["y_serverGetPoint"].values
+        ys_val = feat_val["y_serverGetPoint"].values
         sn_val = feat_val["next_strikeNumber"].values
 
         print("  Feature selection...")
@@ -250,10 +257,7 @@ def main():
         print(f"    Act={len(sel_act)}, Pt={len(sel_pt)}, Srv={len(sel_srv)} ({time.time()-t0:.1f}s)")
 
         Xa_tr, Xa_val = X_tr[:, sel_act], X_val[:, sel_act]
-        Xp_tr, Xp_val = X_tr[:, sel_pt], X_val[:, sel_pt]
-        Xs_tr, Xs_val = X_tr[:, sel_srv], X_val[:, sel_srv]
 
-        # ---- ACTION MODELS (same as V7) ----
         print("  Training CatBoost (action)...")
         t0 = time.time()
         m = CatBoostClassifier(iterations=n_boost, learning_rate=0.03, depth=8,
@@ -287,23 +291,76 @@ def main():
         ml_act = lgb.train(params_lgb_act, dtrain_l, num_boost_round=n_boost, valid_sets=[dval_l],
                            callbacks=[lgb.early_stopping(es_rounds), lgb.log_evaluation(0)])
         oof_act["LGB"][val_idx] = ml_act.predict(Xa_val)
-        print(f"    Action models done ({time.time()-t0:.0f}s)")
+        print(f"    Action done ({time.time()-t0:.0f}s) | Fold 1 elapsed {(time.time()-t_fold)/60:.1f} min")
 
-        # ---- CROSS-TASK: append val action OOF probs to point features ----
-        # Val: use actual OOF action probs (3-model average)
-        val_act_blend = (oof_act["CB"][val_idx] +
-                         oof_act["XGB"][val_idx] +
-                         oof_act["LGB"][val_idx]) / 3.0
-        # Train: zeros (action probs not available without leakage)
-        Xp_tr_aug = np.hstack([Xp_tr, np.zeros((len(Xp_tr), N_ACTION), dtype=np.float32)])
-        Xp_val_aug = np.hstack([Xp_val, val_act_blend.astype(np.float32)])
+        # Store fold metadata for Pass 2 (tiny arrays only)
+        fold_cache.append({
+            "sel_pt": sel_pt, "sel_srv": sel_srv,
+            "ya_val": ya_val, "yp_val": yp_val, "ys_val": ys_val, "sn_val": sn_val,
+        })
+        gc.collect()
+
+    # OOF action blend — now covers every train sample via held-out predictions
+    oof_act_blend = (oof_act["CB"] + oof_act["XGB"] + oof_act["LGB"]) / 3.0
+    print(f"\n{'='*60}")
+    print("Pass 1 complete. oof_act_blend ready.")
+    print("Starting Pass 2: point + server models with real action OOF features.")
+    print(f"{'='*60}")
+
+    # ========================================
+    # PASS 2: POINT + SERVER MODELS
+    # Uses oof_act_blend[tr_idx] for train (no leakage: computed from other folds)
+    # and oof_act_blend[val_idx] for val — both are non-zero real predictions.
+    # ========================================
+    for fold, (tr_idx, val_idx) in enumerate(all_splits):
+        t_fold = time.time()
+        cache = fold_cache[fold]
+        print(f"\n{'='*60}")
+        print(f"  [Pass 2] FOLD {fold+1}/{len(all_splits)} — point + server models")
+        print(f"{'='*60}")
+
+        tr_rallies = set(sample_rally_uids[tr_idx])
+        val_rallies = set(sample_rally_uids[val_idx])
+        tr_raw = train_df[train_df["rally_uid"].isin(tr_rallies)]
+        val_raw = train_df[train_df["rally_uid"].isin(val_rallies)]
+
+        # Rebuild features (fold-safe); skip feature selection — reuse from Pass 1
+        print("  Rebuilding features (reusing sel_pt, sel_srv from Pass 1)...")
+        t0 = time.time()
+        fold_stats = compute_global_stats_v5(tr_raw)
+        feat_tr = build_features_v5(tr_raw, is_train=True, global_stats_v5=fold_stats)
+        feat_val = build_features_v5(val_raw, is_train=True, global_stats_v5=fold_stats)
+        fnames = get_feature_names_v5(feat_tr)
+
+        X_tr = np.nan_to_num(feat_tr[fnames].values.astype(np.float32), nan=0, posinf=0, neginf=0)
+        X_val = np.nan_to_num(feat_val[fnames].values.astype(np.float32), nan=0, posinf=0, neginf=0)
+        yp_tr = feat_tr["y_pointId"].values
+        ys_tr = feat_tr["y_serverGetPoint"].values
+        yp_val = cache["yp_val"]
+        ys_val = cache["ys_val"]
+        sn_val = cache["sn_val"]
+        ya_val = cache["ya_val"]
+        sel_pt = cache["sel_pt"]
+        sel_srv = cache["sel_srv"]
+        print(f"    Done ({time.time()-t0:.1f}s)")
+
+        Xp_tr = X_tr[:, sel_pt]
+        Xp_val = X_val[:, sel_pt]
+        Xs_tr = X_tr[:, sel_srv]
+        Xs_val = X_val[:, sel_srv]
+
+        # Cross-task augmentation with REAL OOF action probs (no zero-padding)
+        # oof_act_blend[tr_idx]: predictions from folds that excluded fold k → no leakage
+        # oof_act_blend[val_idx]: held-out predictions from fold k → correct
+        Xp_tr_aug = np.hstack([Xp_tr, oof_act_blend[tr_idx].astype(np.float32)])
+        Xp_val_aug = np.hstack([Xp_val, oof_act_blend[val_idx].astype(np.float32)])
 
         # ---- POINT MODELS (extreme class weights) ----
         print("  Training CatBoost (point, extreme weights)...")
         t0 = time.time()
         m = CatBoostClassifier(iterations=n_boost, learning_rate=0.03, depth=8,
                                loss_function="MultiClass", classes_count=N_POINT,
-                               class_weights=POINT_CLASS_WEIGHTS,  # extreme, not auto
+                               class_weights=POINT_CLASS_WEIGHTS,
                                early_stopping_rounds=es_rounds,
                                verbose=0, random_seed=RANDOM_SEED, l2_leaf_reg=3,
                                bootstrap_type="Bernoulli", subsample=0.8, colsample_bylevel=0.7)
@@ -336,7 +393,7 @@ def main():
         oof_pt["LGB"][val_idx] = ml_pt.predict(Xp_val_aug)
         print(f"    Point models done ({time.time()-t0:.0f}s)")
 
-        # ---- SERVER MODELS (same as V7) ----
+        # ---- SERVER MODELS ----
         print("  Training server models...")
         t0 = time.time()
         m = CatBoostClassifier(iterations=n_boost, learning_rate=0.03, depth=8,
@@ -379,13 +436,11 @@ def main():
             ov = 0.4*f1a + 0.4*f1p + 0.2*auc
             print(f"    {name}: F1a={f1a:.4f} F1p={f1p:.4f} AUC={auc:.4f} OV={ov:.4f}")
 
-        # Per-class breakdown for pointId (to verify short zones)
         pt_blend_val = (oof_pt["CB"][val_idx] + oof_pt["XGB"][val_idx] + oof_pt["LGB"][val_idx]) / 3
         pt_pred_val = np.argmax(pt_blend_val, axis=1)
         per_class_f1 = f1_score(yp_val, pt_pred_val, labels=list(range(N_POINT)),
                                 average=None, zero_division=0)
-        short_classes = {1: "FH_short", 3: "BH_short"}
-        for cls_id, cls_name in short_classes.items():
+        for cls_id, cls_name in {1: "FH_short", 3: "BH_short"}.items():
             print(f"      pointId {cls_name}(cls {cls_id}): F1={per_class_f1[cls_id]:.4f} "
                   f"pred_count={(pt_pred_val==cls_id).sum()}")
 
@@ -557,8 +612,8 @@ def main():
     Xp_full_base = X_full[:, sel_pt]
     Xp_test_base = X_test[:, sel_pt]
 
-    # Full train: action probs not available without leakage → zeros
-    Xp_full_aug = np.hstack([Xp_full_base, np.zeros((len(Xp_full_base), N_ACTION), dtype=np.float32)])
+    # Full train: use oof_act_blend (5-fold OOF, no leakage — each sample predicted by folds that excluded it)
+    Xp_full_aug = np.hstack([Xp_full_base, oof_act_blend.astype(np.float32)])
     # Test: use actual predicted action probs
     Xp_test_aug = np.hstack([Xp_test_base, test_act_for_pt.astype(np.float32)])
 
