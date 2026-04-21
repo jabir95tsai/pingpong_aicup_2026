@@ -124,11 +124,54 @@ def build_samples(raw_df: pd.DataFrame, is_train: bool, n_players: int = 200) ->
 
         if is_train:
             target_indices = range(1, n)    # predict each shot
-        else:
-            target_indices = [n - 1]         # only last shot for test
 
-        for tgt in target_indices:
-            k = tgt   # context length = tgt shots (indices 0..tgt-1)
+            for tgt in target_indices:
+                k = tgt   # context length = tgt shots (indices 0..tgt-1)
+
+                cat_seq = np.stack([
+                    strike_id[:k], hand_id[:k], strength[:k],
+                    spin[:k], point_id[:k], action_id[:k], pos_id[:k]
+                ], axis=1).astype(np.int64)   # (k, 7)
+
+                num_seq = np.stack([
+                    sn[:k] / 40.0,
+                    score_s[:k] / 11.0,
+                    score_o[:k] / 11.0,
+                    (score_s[:k] - score_o[:k]) / 22.0,
+                ], axis=1).astype(np.float32)   # (k, 4)
+
+                last_score_s = float(score_s[tgt - 1])
+                last_score_o = float(score_o[tgt - 1])
+                context = np.array([
+                    sex / 2.0,
+                    num_game / 7.0,
+                    (last_score_s - last_score_o) / 22.0,
+                ], dtype=np.float32)  # (3,)
+
+                y_a = int(action_id[tgt])
+                y_a = min(y_a, N_ACTION_TRAIN - 1)   # clip serve classes → 0..14
+                y_p = int(point_id[tgt])
+                y_s = int(server_gp[tgt])
+                nsn = int(sn[tgt])
+
+                samples.append({
+                    "cat_seq":   cat_seq,
+                    "num_seq":   num_seq,
+                    "context":   context,
+                    "pid_self":  min(pid_self,  n_players - 1),
+                    "pid_other": min(pid_other, n_players - 1),
+                    "y_action":  y_a,
+                    "y_point":   y_p,
+                    "y_server":  y_s,
+                    "next_sn":   nsn,
+                    "rally_uid": uid,
+                    "match_id":  match_id,
+                })
+
+        else:
+            # Test: use ALL n visible shots as context; predict the (n+1)-th shot.
+            # tgt = n is a virtual index past the end — no ground-truth labels needed.
+            k = n
 
             cat_seq = np.stack([
                 strike_id[:k], hand_id[:k], strength[:k],
@@ -142,19 +185,16 @@ def build_samples(raw_df: pd.DataFrame, is_train: bool, n_players: int = 200) ->
                 (score_s[:k] - score_o[:k]) / 22.0,
             ], axis=1).astype(np.float32)   # (k, 4)
 
-            last_score_s = float(score_s[tgt - 1])
-            last_score_o = float(score_o[tgt - 1])
+            last_score_s = float(score_s[k - 1])
+            last_score_o = float(score_o[k - 1])
             context = np.array([
                 sex / 2.0,
                 num_game / 7.0,
                 (last_score_s - last_score_o) / 22.0,
             ], dtype=np.float32)  # (3,)
 
-            y_a = int(action_id[tgt])
-            y_a = min(y_a, N_ACTION_TRAIN - 1)   # clip serve classes → 0..14
-            y_p = int(point_id[tgt])
-            y_s = int(server_gp[tgt]) if is_train else 0
-            nsn = int(sn[tgt])
+            # next_sn = last visible strikeNumber + 1 (the shot being predicted)
+            nsn = int(sn[-1]) + 1
 
             samples.append({
                 "cat_seq":   cat_seq,
@@ -162,9 +202,9 @@ def build_samples(raw_df: pd.DataFrame, is_train: bool, n_players: int = 200) ->
                 "context":   context,
                 "pid_self":  min(pid_self,  n_players - 1),
                 "pid_other": min(pid_other, n_players - 1),
-                "y_action":  y_a,
-                "y_point":   y_p,
-                "y_server":  y_s,
+                "y_action":  0,   # placeholder — unknown at test time
+                "y_point":   0,   # placeholder
+                "y_server":  0,   # placeholder
                 "next_sn":   nsn,
                 "rally_uid": uid,
                 "match_id":  match_id,

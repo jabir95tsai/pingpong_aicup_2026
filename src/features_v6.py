@@ -115,11 +115,30 @@ def build_features_v6(df: pd.DataFrame, is_train: bool,
 
 
 def get_feature_names_v6(feat_df: pd.DataFrame) -> list:
-    """Return numeric feature column names (exclude metadata / target columns)."""
+    """Return numeric feature column names (exclude metadata / target columns).
+
+    Proxy features derived from serverGetPoint (win-rates, target encodings)
+    are explicitly excluded to prevent target leakage. These columns originate
+    in features_v4 and are inherited through v5 → v6.
+    """
+    # Metadata / target columns
     exclude = {
         "rally_uid", "y_actionId", "y_pointId", "y_serverGetPoint",
         "next_strikeNumber",
     }
+    # serverGetPoint proxy / win-rate features (computed from target in train,
+    # would encode the label at inference time → data leakage).
+    _SGP_PROXY_FEATURES = {
+        "te_game_sgp",
+        "te_sd_bin_sgp",
+        "player_score_sit_wr",
+        "serve_type_wr",
+        "rally_len_wr",
+        "sgp_pred_avg",
+        "sgp_pred_hitter_wr_x_sit",
+    }
+    exclude = exclude | _SGP_PROXY_FEATURES
+
     ok_dtypes = {np.float32, np.float64, np.int32, np.int64, int, float}
     names = []
     for c in feat_df.columns:

@@ -27,6 +27,10 @@ def main():
                         default=os.path.join(os.path.dirname(SUBMISSION_DIR),
                                              "oof_predictions", "v11_test_srv.npy"),
                         help="V11 transformer test server probabilities (.npy)")
+    parser.add_argument("--v11-sub", type=str,
+                        default=os.path.join(SUBMISSION_DIR,
+                                             "submission_v11_transformer.csv"),
+                        help="V11 submission CSV — used to get rally_uid ordering for the .npy")
     parser.add_argument("--srv-blend", type=float, default=1.0,
                         help="Weight for V11 server probs (0=V10 only, 1=V11 only)")
     parser.add_argument("--binary-threshold", type=float, default=-1,
@@ -42,25 +46,47 @@ def main():
         return
 
     v10 = pd.read_csv(args.v10)
-    v11_srv = np.load(args.v11_srv)
+    v11_srv_raw = np.load(args.v11_srv)
 
     print(f"V10 submission: {len(v10)} rows")
-    print(f"V11 server probs: {len(v11_srv)} values  mean={v11_srv.mean():.4f}  std={v11_srv.std():.4f}")
+    print(f"V11 server probs (.npy): {len(v11_srv_raw)} values  "
+          f"mean={v11_srv_raw.mean():.4f}  std={v11_srv_raw.std():.4f}")
     print(f"V10 SGP dist: {dict(v10['serverGetPoint'].value_counts().sort_index())}")
 
-    if len(v10) != len(v11_srv):
-        print(f"WARNING: length mismatch {len(v10)} vs {len(v11_srv)}")
-        # Try to align by rally_uid order
-        v10_rallies = v10["rally_uid"].values
-        # The V11 test samples are in the order produced by build_samples
-        # which may differ from V10 order; we'll trust they're aligned for now
-        min_len = min(len(v10), len(v11_srv))
-        v10 = v10.iloc[:min_len].copy()
-        v11_srv = v11_srv[:min_len]
+    # ── Key-based alignment via V11 submission CSV ────────────────────────────
+    # The .npy rows are in the same order as the V11 submission CSV.
+    # Build a rally_uid → server_prob lookup then merge onto V10 by key.
+    if not os.path.exists(args.v11_sub):
+        print(f"ERROR: V11 submission CSV not found: {args.v11_sub}")
+        print("  Provide --v11-sub to enable key-based alignment.")
+        return
+
+    v11_sub = pd.read_csv(args.v11_sub)
+    if len(v11_sub) != len(v11_srv_raw):
+        print(f"ERROR: V11 sub CSV ({len(v11_sub)} rows) and .npy "
+              f"({len(v11_srv_raw)} values) length mismatch — cannot align safely.")
+        return
+
+    v11_lookup = pd.DataFrame({
+        "rally_uid":      v11_sub["rally_uid"].values,
+        "v11_srv":        v11_srv_raw,
+    })
+
+    # Verify no duplicate keys in either side
+    assert v10["rally_uid"].nunique() == len(v10), \
+        "V10 submission has duplicate rally_uid rows"
+    assert v11_lookup["rally_uid"].nunique() == len(v11_lookup), \
+        "V11 server probs have duplicate rally_uid rows"
+
+    merged = v10.merge(v11_lookup, on="rally_uid", how="inner")
+    n_missing = len(v10) - len(merged)
+    if n_missing:
+        print(f"WARNING: {n_missing} rally_uids in V10 have no V11 server prob — dropped.")
+    print(f"Aligned rows: {len(merged)} / {len(v10)}")
 
     # Blend: alpha * V11 + (1 - alpha) * V10_binary
-    v10_srv_binary = v10["serverGetPoint"].values.astype(float)
-    blended_srv = args.srv_blend * v11_srv + (1 - args.srv_blend) * v10_srv_binary
+    v10_srv_binary = merged["serverGetPoint"].values.astype(float)
+    blended_srv = args.srv_blend * merged["v11_srv"].values + (1 - args.srv_blend) * v10_srv_binary
 
     if args.binary_threshold >= 0:
         final_srv = (blended_srv >= args.binary_threshold).astype(int)
@@ -69,7 +95,7 @@ def main():
         final_srv = blended_srv  # continuous
         label = "continuous"
 
-    hybrid = v10.copy()
+    hybrid = merged[["rally_uid", "actionId", "pointId"]].copy()
     hybrid["serverGetPoint"] = final_srv
 
     suffix = f"blend{args.srv_blend:.1f}_{label}"
@@ -84,7 +110,7 @@ def main():
     # Also create a version with optimal binary threshold (50/50 split)
     median_thresh = np.median(blended_srv)
     binary_50 = (blended_srv >= median_thresh).astype(int)
-    hybrid_50 = v10.copy()
+    hybrid_50 = merged[["rally_uid", "actionId", "pointId"]].copy()
     hybrid_50["serverGetPoint"] = binary_50
     out_50 = os.path.join(SUBMISSION_DIR, "submission_v10_v11srv_binary50.csv")
     hybrid_50.to_csv(out_50, index=False)
