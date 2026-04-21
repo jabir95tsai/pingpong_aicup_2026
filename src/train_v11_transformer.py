@@ -149,7 +149,11 @@ def build_samples(raw_df: pd.DataFrame, is_train: bool, n_players: int = 200) ->
                 ], dtype=np.float32)  # (3,)
 
                 y_a = int(action_id[tgt])
-                y_a = min(y_a, N_ACTION_TRAIN - 1)   # clip serve classes → 0..14
+                # Serve classes 15-18 cannot appear as next-shot targets;
+                # map them to class 0 ("None/other") rather than clipping to 14,
+                # which would silently contaminate the Flick class.
+                if y_a >= N_ACTION_TRAIN:
+                    y_a = 0
                 y_p = int(point_id[tgt])
                 y_s = int(server_gp[tgt])
                 nsn = int(sn[tgt])

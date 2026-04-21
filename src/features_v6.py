@@ -128,14 +128,47 @@ def get_feature_names_v6(feat_df: pd.DataFrame) -> list:
     }
     # serverGetPoint proxy / win-rate features (computed from target in train,
     # would encode the label at inference time → data leakage).
+    #
+    # Root features (V3/V4 — directly averaged over serverGetPoint):
+    #   hitter_win_rate, receiver_win_rate  ← player-level SGP win rates
+    #   matchup_winrate_a                   ← head-to-head SGP win rate
+    #   te_game_sgp, te_sd_bin_sgp          ← TE of game/score-diff vs SGP
+    #   player_score_sit_wr                 ← player × score-sit SGP rate
+    #   serve_type_wr                       ← serve-action SGP rate
+    #   rally_len_wr                        ← rally-length SGP rate
+    #
+    # Derived composites (products / sums / stds of the roots):
+    #   sgp_pred_avg, sgp_pred_std          ← ensemble avg / std of TE cols
+    #   sgp_pred_hitter_wr_x_sit            ← hitter_win_rate × player_score_sit_wr
+    #   sgp_pred_matchup_x_serve            ← matchup_winrate_a × serve_type_wr
+    #
+    # Interaction features that multiply a root into an otherwise clean feature:
+    #   wr_diff_hitter_receiver             ← hitter_win_rate − receiver_win_rate
+    #   wr_product_h_r                      ← hitter_win_rate × receiver_win_rate
+    #   inter_game_pt_x_hitter_wr           ← is_game_point × hitter_win_rate
+    #   inter_deuce_x_hitter_wr             ← is_deuce × hitter_win_rate
+    #   inter_serve_zone_x_hwr              ← serve_zone × hitter_win_rate
     _SGP_PROXY_FEATURES = {
+        # roots
+        "hitter_win_rate",
+        "receiver_win_rate",
+        "matchup_winrate_a",
         "te_game_sgp",
         "te_sd_bin_sgp",
         "player_score_sit_wr",
         "serve_type_wr",
         "rally_len_wr",
+        # composites
         "sgp_pred_avg",
+        "sgp_pred_std",
         "sgp_pred_hitter_wr_x_sit",
+        "sgp_pred_matchup_x_serve",
+        # interactions
+        "wr_diff_hitter_receiver",
+        "wr_product_h_r",
+        "inter_game_pt_x_hitter_wr",
+        "inter_deuce_x_hitter_wr",
+        "inter_serve_zone_x_hwr",
     }
     exclude = exclude | _SGP_PROXY_FEATURES
 

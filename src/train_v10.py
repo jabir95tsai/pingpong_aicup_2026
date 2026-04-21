@@ -289,7 +289,9 @@ def main():
                                       raw_df=tr_raw)
         feat_val = build_features_v6(val_raw, is_train=True,
                                       global_stats_v6=fold_stats,
-                                      raw_df=tr_raw)   # lag lookup uses tr for test-like setup
+                                      raw_df=val_raw)  # lag lookup uses val_raw so extra-lag
+                                                       # one-hots see the validation rally history
+                                                       # (mirrors how test features are built)
 
         X_tr, y_a_tr, y_p_tr, y_s_tr, nsn_tr     = extract_Xy(feat_tr,  fnames)
         X_val, y_a_val, y_p_val, y_s_val, nsn_val = extract_Xy(feat_val, fnames)

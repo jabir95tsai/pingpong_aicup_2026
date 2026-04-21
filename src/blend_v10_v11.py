@@ -140,29 +140,36 @@ def main():
             print(f"\nManual blend OV={ov:.4f}  F1_a={f1a:.4f}  F1_p={f1p:.4f}  AUC={auc:.4f}")
 
         # Build blended test predictions using V10/V11 submissions
-        v10_sub = pd.read_csv(args.v10_sub)
         v11_sub = pd.read_csv(args.v11_sub)
+        v10_sub = pd.read_csv(args.v10_sub)
 
-        # Blend server (V10 has 0/1, V11 has continuous; use V11 srv + threshold from V10)
-        # For action and point, we need probability, but submissions only have argmax...
-        # This blend only works if we have the full probability arrays for test
-        print("\nNote: Full probability blend for test using saved numpy arrays.")
+        # Align V10 server predictions to V11 rally_uid order (key-based, not positional).
+        # V10 submission has binary 0/1 serverGetPoint; use that as the V10 component.
+        v11_uid_order = v11_sub["rally_uid"].values
+        v10_srv_lookup = v10_sub.set_index("rally_uid")["serverGetPoint"].to_dict()
+        test_srv10 = np.array([v10_srv_lookup.get(uid, 0.5) for uid in v11_uid_order],
+                               dtype=np.float32)
+        n_missing_v10 = np.sum(test_srv10 == 0.5)
+        if n_missing_v10:
+            print(f"  WARNING: {n_missing_v10} test rally_uids not in V10 sub; using 0.5")
 
-        blend_test_srv = alpha_srv * test_srv11 + (1 - alpha_srv) * 0.5  # fallback
+        # alpha_srv was searched on OOF where both models had real predictions;
+        # test-time blend must use the same formula so OOF calibration is valid.
+        blend_test_srv = alpha_srv * test_srv11 + (1 - alpha_srv) * test_srv10
 
-        # If no GBM test probs, can't blend action/point properly
-        print("Using V11 action/point with blended server.")
+        print("Using V11 action/point with rally-aligned blended server.")
         pred_act = test_act11.argmax(axis=1)
         pred_pt  = test_pt11.argmax(axis=1)
         pred_srv = blend_test_srv
     else:
         # No V10 OOF → just emit V11 standalone submission
+        v11_sub = pd.read_csv(args.v11_sub)
         print("\nNo V10 OOF provided — using V11 predictions only.")
         pred_act = test_act11.argmax(axis=1)
         pred_pt  = test_pt11.argmax(axis=1)
         pred_srv = test_srv11
 
-    # Emit final blended submission
+    # Emit final blended submission (key-based: use V11 rally_uid order)
     rally_uid_test = pd.read_csv(args.v11_sub)["rally_uid"].values
     sub = pd.DataFrame({
         "rally_uid":      rally_uid_test,
