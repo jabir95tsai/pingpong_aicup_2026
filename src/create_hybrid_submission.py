@@ -81,8 +81,13 @@ def main():
     merged = v10.merge(v11_lookup, on="rally_uid", how="inner")
     n_missing = len(v10) - len(merged)
     if n_missing:
-        print(f"WARNING: {n_missing} rally_uids in V10 have no V11 server prob — dropped.")
-    print(f"Aligned rows: {len(merged)} / {len(v10)}")
+        missing_uids = set(v10["rally_uid"]) - set(v11_lookup["rally_uid"])
+        print(f"ERROR: {n_missing} rally_uid(s) present in V10 but absent from V11 sub:")
+        for uid in sorted(missing_uids)[:10]:
+            print(f"  {uid}")
+        print("Fix: regenerate the V11 submission so it covers all test rally_uids.")
+        return
+    print(f"Aligned rows: {len(merged)} / {len(v10)}  (exact match)")
 
     # Blend: alpha * V11 + (1 - alpha) * V10_binary
     v10_srv_binary = merged["serverGetPoint"].values.astype(float)

@@ -112,6 +112,22 @@ def main():
             y_a_all, y_p_all, y_s_all, oof_mask10)
         print(f"V10 GBM standalone:        action={f1a10:.4f}  point={f1p10:.4f}  AUC={auc10:.4f}  OV={ov10:.4f}")
 
+        # Hard check: V10 and V11 OOF arrays must cover exactly the same samples
+        # (same length and same ordering produced by build_samples on the same train_df).
+        # Positional slicing is intentionally forbidden — if lengths differ the arrays
+        # were produced from different sample sets and any positional blend is invalid.
+        for name, arr10, arr11 in [("act", oof_act10, oof_act11),
+                                    ("pt",  oof_pt10,  oof_pt11),
+                                    ("srv", oof_srv10, oof_srv11)]:
+            if len(arr10) != len(arr11):
+                raise ValueError(
+                    f"OOF length mismatch for '{name}': "
+                    f"V10={len(arr10)}  V11={len(arr11)}.\n"
+                    "V10 and V11 OOF arrays must be produced from the same sample "
+                    "ordering (same build_samples call on the same train_df). "
+                    "Re-generate both sets of OOF files before blending."
+                )
+
         # Find common OOF mask
         common_mask = oof_mask11 & oof_mask10
 
@@ -121,9 +137,9 @@ def main():
             for aa, ap, as_ in product(np.arange(0, 1.05, 0.1),
                                         np.arange(0, 1.05, 0.1),
                                         np.arange(0, 1.05, 0.1)):
-                blend_act = aa * oof_act11 + (1 - aa) * oof_act10[:len(oof_act11)]
-                blend_pt  = ap * oof_pt11  + (1 - ap) * oof_pt10[:len(oof_pt11)]
-                blend_srv = as_ * oof_srv11 + (1 - as_) * oof_srv10[:len(oof_srv11)]
+                blend_act = aa * oof_act11 + (1 - aa) * oof_act10
+                blend_pt  = ap * oof_pt11  + (1 - ap) * oof_pt10
+                blend_srv = as_ * oof_srv11 + (1 - as_) * oof_srv10
                 ov, _, _, _ = compute_ov(blend_act, blend_pt, blend_srv,
                                           y_a_all, y_p_all, y_s_all, common_mask)
                 if ov > best_ov:
@@ -132,9 +148,9 @@ def main():
             alpha_act, alpha_pt, alpha_srv = best_aa, best_ap, best_as
         else:
             alpha_act, alpha_pt, alpha_srv = args.alpha_act, args.alpha_pt, args.alpha_srv
-            blend_act = alpha_act * oof_act11 + (1 - alpha_act) * oof_act10[:len(oof_act11)]
-            blend_pt  = alpha_pt * oof_pt11   + (1 - alpha_pt) * oof_pt10[:len(oof_pt11)]
-            blend_srv = alpha_srv * oof_srv11 + (1 - alpha_srv) * oof_srv10[:len(oof_srv11)]
+            blend_act = alpha_act * oof_act11 + (1 - alpha_act) * oof_act10
+            blend_pt  = alpha_pt * oof_pt11   + (1 - alpha_pt) * oof_pt10
+            blend_srv = alpha_srv * oof_srv11 + (1 - alpha_srv) * oof_srv10
             ov, f1a, f1p, auc = compute_ov(blend_act, blend_pt, blend_srv,
                                              y_a_all, y_p_all, y_s_all, common_mask)
             print(f"\nManual blend OV={ov:.4f}  F1_a={f1a:.4f}  F1_p={f1p:.4f}  AUC={auc:.4f}")
@@ -147,11 +163,17 @@ def main():
         # V10 submission has binary 0/1 serverGetPoint; use that as the V10 component.
         v11_uid_order = v11_sub["rally_uid"].values
         v10_srv_lookup = v10_sub.set_index("rally_uid")["serverGetPoint"].to_dict()
-        test_srv10 = np.array([v10_srv_lookup.get(uid, 0.5) for uid in v11_uid_order],
+
+        missing_uids = [uid for uid in v11_uid_order if uid not in v10_srv_lookup]
+        if missing_uids:
+            raise ValueError(
+                f"{len(missing_uids)} test rally_uid(s) present in V11 sub but "
+                f"absent from V10 sub (first 10: {missing_uids[:10]}).\n"
+                "Ensure both submissions cover the same set of test rallies before blending."
+            )
+
+        test_srv10 = np.array([v10_srv_lookup[uid] for uid in v11_uid_order],
                                dtype=np.float32)
-        n_missing_v10 = np.sum(test_srv10 == 0.5)
-        if n_missing_v10:
-            print(f"  WARNING: {n_missing_v10} test rally_uids not in V10 sub; using 0.5")
 
         # alpha_srv was searched on OOF where both models had real predictions;
         # test-time blend must use the same formula so OOF calibration is valid.
