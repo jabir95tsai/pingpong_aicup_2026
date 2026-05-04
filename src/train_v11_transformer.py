@@ -510,35 +510,42 @@ def evaluate(model, loader, device=DEVICE):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--smoke",       action="store_true")
-    parser.add_argument("--folds",       type=int, default=N_FOLDS)
-    parser.add_argument("--epochs",      type=int, default=80)
-    parser.add_argument("--d-model",     type=int, default=192)
-    parser.add_argument("--n-layers",    type=int, default=4)
-    parser.add_argument("--batch",       type=int, default=256)
-    parser.add_argument("--lr",          type=float, default=3e-4)
-    parser.add_argument("--no-aug",      action="store_true")
-    parser.add_argument("--blend-gbm",   type=str, default="",
+    parser.add_argument("--smoke",          action="store_true")
+    parser.add_argument("--tag",            type=str, default="v11")
+    parser.add_argument("--folds",          type=int, default=N_FOLDS)
+    parser.add_argument("--epochs",         type=int, default=80)
+    parser.add_argument("--d-model",        type=int, default=192)
+    parser.add_argument("--n-heads",        type=int, default=8)
+    parser.add_argument("--n-layers",       type=int, default=4)
+    parser.add_argument("--batch",          type=int, default=256)
+    parser.add_argument("--lr",             type=float, default=3e-4)
+    parser.add_argument("--no-aug",         action="store_true")
+    parser.add_argument("--point-w-scale",  type=float, default=1.0,
+                        help="Multiply POINT_W for rare classes (cls 1,3) by this factor")
+    parser.add_argument("--blend-gbm",      type=str, default="",
                         help="Path to V10 GBM submission CSV for final blend")
     args = parser.parse_args()
 
     is_smoke = args.smoke
+    out_tag  = args.tag
     n_folds  = 1 if is_smoke else args.folds
     n_epochs = 5 if is_smoke else args.epochs
     use_aug  = not args.no_aug
     bs       = args.batch
     lr       = args.lr
     d_model  = args.d_model
+    n_heads  = args.n_heads
     n_layers = args.n_layers
+    pw_scale = args.point_w_scale
 
     torch.manual_seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
     t_start = time.time()
     print("=" * 70)
-    print(f"V11 TRANSFORMER {'(SMOKE)' if is_smoke else ''}")
-    print(f"  device={DEVICE}  d_model={d_model}  n_layers={n_layers}")
-    print(f"  folds={n_folds}  epochs={n_epochs}  batch={bs}  lr={lr}")
+    print(f"V11 TRANSFORMER {'(SMOKE)' if is_smoke else ''}  tag={out_tag}")
+    print(f"  device={DEVICE}  d_model={d_model}  n_heads={n_heads}  n_layers={n_layers}")
+    print(f"  folds={n_folds}  epochs={n_epochs}  batch={bs}  lr={lr}  pw_scale={pw_scale}")
     print("=" * 70)
 
     raw_train = pd.read_csv(TRAIN_PATH)
@@ -582,9 +589,13 @@ def main():
     nsn_test = np.array([s["next_sn"] for s in test_samples])
     rally_uid_test = [s["rally_uid"] for s in test_samples]
 
-    # Loss weights (on device)
+    # Loss weights (on device) — scale rare point classes if requested
+    _pt_w = POINT_W.copy()
+    if pw_scale != 1.0:
+        for c in [1, 3]:  # FH_short, BH_short
+            _pt_w[c] *= pw_scale
     act_w = torch.tensor(ACTION_W, device=DEVICE)
-    pt_w  = torch.tensor(POINT_W,  device=DEVICE)
+    pt_w  = torch.tensor(_pt_w,    device=DEVICE)
     act_loss_fn = FocalLoss(act_w, gamma=2.0)
     pt_loss_fn  = FocalLoss(pt_w,  gamma=2.0)
 
@@ -615,7 +626,7 @@ def main():
                                  num_workers=0, pin_memory=True)
 
         model = RallyTransformer(
-            d_model=d_model, n_heads=8, n_layers=n_layers,
+            d_model=d_model, n_heads=n_heads, n_layers=n_layers,
             dropout=0.15, n_players=n_players + 5, max_len=40
         ).to(DEVICE)
 
@@ -730,14 +741,20 @@ def main():
     # ─── Save OOF predictions (for later blending with V10 GBM) ───────────────
     oof_save_dir = os.path.join(os.path.dirname(SUBMISSION_DIR), "oof_predictions")
     os.makedirs(oof_save_dir, exist_ok=True)
-    np.save(os.path.join(oof_save_dir, "v11_oof_act.npy"),  oof_act)
-    np.save(os.path.join(oof_save_dir, "v11_oof_pt.npy"),   oof_pt)
-    np.save(os.path.join(oof_save_dir, "v11_oof_srv.npy"),  oof_srv)
-    np.save(os.path.join(oof_save_dir, "v11_oof_mask.npy"), oof_mask_arr)
-    np.save(os.path.join(oof_save_dir, "v11_test_act.npy"), test_act_acc)
-    np.save(os.path.join(oof_save_dir, "v11_test_pt.npy"),  test_pt_acc)
-    np.save(os.path.join(oof_save_dir, "v11_test_srv.npy"), test_srv_acc)
-    print(f"\n  OOF + test predictions saved to {oof_save_dir}")
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_act.npy"),   oof_act)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_pt.npy"),    oof_pt)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_srv.npy"),   oof_srv)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_mask.npy"),  oof_mask_arr)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_y_act.npy"), y_a_all)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_y_pt.npy"),  y_p_all)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_y_srv.npy"), y_s_all)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_oof_nsn.npy"),   nsn_all)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_test_act.npy"),  test_act_acc)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_test_pt.npy"),   test_pt_acc)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_test_srv.npy"),  test_srv_acc)
+    np.save(os.path.join(oof_save_dir, f"{out_tag}_test_rally_uid.npy"),
+            np.array(rally_uid_test))
+    print(f"\n  OOF + test predictions saved to {oof_save_dir}  (tag={out_tag})")
 
     # ─── Generate submission ──────────────────────────────────────────────────
     print("\n--- Generating submission ---")
@@ -756,7 +773,7 @@ def main():
         "serverGetPoint": pred_srv,   # continuous [0,1]
     })
 
-    out_path = os.path.join(SUBMISSION_DIR, "submission_v11_transformer.csv")
+    out_path = os.path.join(SUBMISSION_DIR, f"submission_{out_tag}.csv")
     sub.to_csv(out_path, index=False)
     print(f"  actionId dist: {dict(pd.Series(pred_act).value_counts().sort_index())}")
     print(f"  pointId  dist: {dict(pd.Series(pred_pt).value_counts().sort_index())}")
