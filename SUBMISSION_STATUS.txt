@@ -1,0 +1,49 @@
+# AI CUP 2026 提交进展
+
+## 已完成模型版本
+
+V9 (GBM baseline)
+- 类型: 5-fold GBM基线 (LGB+XGB+CB)
+- OOF OV: 0.3675
+- 功能: 基础双模型阶段，特征V5 (931维)
+- 提交: submission_v9.csv
+
+V10 (GBM with 2-pass action→point stacking) ✓ COMPLETED
+- 类型: 5-fold GBM增强版
+- 特征: V6 (1138维，额外lag 4,6,8,10的one-hot)
+- 关键创新: 两阶段堆叠 (action probs → point model extra features)
+- 预计OOF OV: > 0.3675 (fold 1 = 0.3629 with action/point/AUC = 0.4066/0.2050/0.5913)
+- 提交: submission_v10.csv (完成时间 Apr 21 18:30)
+
+V11 (Bidirectional Transformer) ✓ COMPLETED
+- 类型: 5-fold PyTorch Transformer (4层, d=192)
+- 特征: 7个类别的嵌入 (strikeId, handId, strengthId, spinId, pointId, actionId, positionId)
+- 独特性: 输出连续服务器概率 [0,1] (而非0/1)
+- OOF OV: 0.3205 (action=0.3270, point=0.1973, AUC=0.5541)
+- 提交: submission_v11_transformer.csv
+
+## 混合提交 (V10 + V11服务器)
+
+submission_v10_v11srv_blend1.0_continuous.csv
+- V10的actionId和pointId
+- V11的连续serverGetPoint概率
+- 理由: V11服务器概率(mean=0.5186, std=0.0907)比V10的0/1更能信息化AUC评估
+
+submission_v10_v11srv_binary50.csv
+- V10的actionId和pointId
+- V11服务器概率的50/50二元化阈值(thresh=0.5013)
+- 作为备选方案
+
+## 下一步行动
+
+1. ✓ 生成混合提交文件
+2. [ ] 选择最佳提交 (推荐: submission_v10_v11srv_blend1.0_continuous.csv)
+3. [ ] 提交到竞赛 (每日3次限制)
+4. [ ] 等待LB评估
+
+## 已知问题
+
+- V11变换器缺少全局统计特征(玩家分布、二元组转移、比赛阶段)，导致性能不如GBM
+- V11对cls3(BH_short)过度预测，权重需要在V12调整
+- V11对cls0(action)也有过度预测(33%)
+
