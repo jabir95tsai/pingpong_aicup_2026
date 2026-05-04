@@ -1,9 +1,30 @@
 """Configuration constants for the ping pong prediction project."""
 import os
 
+
+def _has_required_data_files(path):
+    if not path:
+        return False
+    required = ["train.csv", "test.csv", "sample_submission.csv"]
+    return all(os.path.exists(os.path.join(path, name)) for name in required)
+
+
+def _resolve_data_dir(project_root):
+    """Pick first valid data dir: env override -> project/data -> hardcoded fallback."""
+    candidates = []
+    env_dir = os.environ.get("PINGPONG_DATA_DIR")
+    if env_dir:
+        candidates.append(env_dir)
+    candidates.append(os.path.join(project_root, "data"))
+    for candidate in candidates:
+        if _has_required_data_files(candidate):
+            return os.path.abspath(candidate)
+    return os.path.abspath(os.path.join(project_root, "data"))
+
+
 # Paths
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+DATA_DIR = _resolve_data_dir(PROJECT_ROOT)
 MODEL_DIR = os.path.join(PROJECT_ROOT, "models")
 SUBMISSION_DIR = os.path.join(PROJECT_ROOT, "submissions")
 

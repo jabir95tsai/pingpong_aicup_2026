@@ -1,0 +1,7 @@
+train_path=C:\Users\jabir\Hacker_J\pingpong_aicup_2026\data\train.csv
+holdout_frac=0.2
+seed=42
+holdout_rallies=2895
+prefix_rows=14116
+dropped_short_rallies=0
+holdout_matches=44
