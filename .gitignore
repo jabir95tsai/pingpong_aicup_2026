@@ -36,6 +36,9 @@ models/*.pkl
 models/*.pt
 models/*.npz
 
+# OOF / test prediction arrays (large, local only)
+oof_predictions/*.npy
+
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
