@@ -50,7 +50,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-from sklearn.metrics import f1_score, roc_auc_score
+from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import PROJECT_ROOT, SUBMISSION_DIR
@@ -69,14 +69,8 @@ ACTION_CW = {
     12: 0.9, 13: 0.7, 14: 10.0,
     15: 0.01, 16: 0.01, 17: 0.01, 18: 0.01,
 }
-POINT_CW = {
-    0: 0.5, 1: 12.0, 2: 22.0, 3: 22.0, 4: 2.0,
-    5: 0.9, 6: 1.5, 7: 0.8, 8: 0.7, 9: 0.6,
-}
-# Note: I follow final_blend_optimized.py's constants exactly. The above
-# point cw is an intentional copy to keep CW results comparable to that
-# pipeline's prior runs. (final_blend uses 2.5 for cls 2; if a future change
-# to that file is needed, edit there and here in lock-step.)
+# Mirrors final_blend_optimized.py's class-weight baselines. If those change
+# there, change them here in lock-step.
 POINT_CW = {
     0: 0.5, 1: 12.0, 2: 2.5, 3: 22.0, 4: 2.0,
     5: 0.9, 6: 1.5, 7: 0.8, 8: 0.7, 9: 0.6,
@@ -85,7 +79,10 @@ POINT_CW = {
 GROUP_A = ["v16_testhist_aug"]
 GROUP_B = ["v14_avg3", "v14_seed0", "v14_seed1", "v14_seed2"]
 GROUP_C = ["v12_5f"]
-GROUP_D = ["v11", "v11plus"]
+# Group D (Transformer): includes v11_aug (P6 V11+test-history aug) as of 2026-05-06.
+# At least 1 from D required; selection logic in enumerate_subsets allows {v11},
+# {v11plus}, {v11_aug}, or any pair / triple subject to overall size cap.
+GROUP_D = ["v11", "v11plus", "v11_aug"]
 GROUP_E = ["v13"]
 ALL_TAGS = GROUP_A + GROUP_B + GROUP_C + GROUP_D + GROUP_E
 
@@ -109,9 +106,25 @@ def pad_act19(arr: np.ndarray) -> np.ndarray:
     return out
 
 
-def macro_f1(y, probs, labels):
-    return f1_score(y, probs.argmax(axis=1), labels=labels,
-                    average="macro", zero_division=0)
+def fast_macro_f1(y_true: np.ndarray, y_pred: np.ndarray,
+                  labels: List[int], n_total: int) -> float:
+    """Macro F1 via single-pass bincount confusion matrix. ~3-25x faster than
+    sklearn f1_score on this workload. Verified equivalent for y_true ranges
+    contained in the labels list."""
+    cm = np.bincount(y_true.astype(np.int64) * n_total + y_pred.astype(np.int64),
+                     minlength=n_total * n_total).reshape(n_total, n_total)
+    col_sum = cm.sum(axis=0)
+    row_sum = cm.sum(axis=1)
+    diag = np.diag(cm)
+    f1s = np.zeros(len(labels), dtype=np.float64)
+    for i, c in enumerate(labels):
+        tp = diag[c]; fp = col_sum[c] - tp; fn = row_sum[c] - tp
+        denom = 2 * tp + fp + fn
+        if denom <= 0:
+            f1s[i] = 0.0
+        else:
+            f1s[i] = (2 * tp) / denom
+    return float(f1s.mean())
 
 
 def load_components(tags: List[str]) -> Dict:
@@ -190,40 +203,74 @@ def load_components(tags: List[str]) -> Dict:
 
 # ---------- Random-search blends ----------
 
-def random_search_action(probs_list: List[np.ndarray], y, n_samples, rng):
+def _draw_weights(rng, n: int, anchor: np.ndarray = None, alpha: float = 1.0):
+    """Sample a length-n simplex vector. Default Dirichlet(1). When `anchor` is
+    given, sample as `(1-α)·anchor + α·Dirichlet(1)`, which lies in the
+    convex combination of anchor and a random simplex point. L1 distance from
+    anchor is bounded by `2·α` (since both vectors sum to 1).
+
+    Output is renormalised to sum to exactly 1.0 (anchor strings from a prior
+    ranking CSV are 3-decimal-rounded and may not sum exactly to 1; the
+    convex combination then drifts slightly off the simplex).
+    """
+    base = rng.dirichlet(np.ones(n))
+    if anchor is None:
+        return base
+    out = (1.0 - alpha) * anchor + alpha * base
+    return out / out.sum()
+
+
+def random_search_action(probs_list: List[np.ndarray], y, n_samples, rng,
+                         anchor=None, anchor_alpha=1.0):
     n = len(probs_list)
     stack = np.stack(probs_list, axis=0)
     best_w, best_f1 = None, -1.0
+    # Always evaluate the anchor itself first when anchored search is on.
+    if anchor is not None:
+        anchor = anchor / anchor.sum()  # renormalise (CSV strings may sum to 0.999...)
+        blend0 = (anchor[:, None, None] * stack).sum(axis=0)
+        f0 = fast_macro_f1(y, blend0.argmax(axis=1), ACTION_EVAL, N_ACTION)
+        best_f1, best_w = f0, anchor
     for _ in range(n_samples):
-        w = rng.dirichlet(np.ones(n))
+        w = _draw_weights(rng, n, anchor=anchor, alpha=anchor_alpha)
         blend = (w[:, None, None] * stack).sum(axis=0)
-        f = f1_score(y, blend.argmax(axis=1), labels=ACTION_EVAL,
-                     average="macro", zero_division=0)
+        f = fast_macro_f1(y, blend.argmax(axis=1), ACTION_EVAL, N_ACTION)
         if f > best_f1:
             best_f1, best_w = f, w
     return best_w, best_f1
 
 
-def random_search_point(probs_list: List[np.ndarray], y, n_samples, rng):
+def random_search_point(probs_list: List[np.ndarray], y, n_samples, rng,
+                        anchor=None, anchor_alpha=1.0):
     n = len(probs_list)
     stack = np.stack(probs_list, axis=0)
     best_w, best_f1 = None, -1.0
+    if anchor is not None:
+        anchor = anchor / anchor.sum()
+        blend0 = (anchor[:, None, None] * stack).sum(axis=0)
+        f0 = fast_macro_f1(y, blend0.argmax(axis=1), POINT_EVAL, N_POINT)
+        best_f1, best_w = f0, anchor
     for _ in range(n_samples):
-        w = rng.dirichlet(np.ones(n))
+        w = _draw_weights(rng, n, anchor=anchor, alpha=anchor_alpha)
         blend = (w[:, None, None] * stack).sum(axis=0)
-        f = f1_score(y, blend.argmax(axis=1), labels=POINT_EVAL,
-                     average="macro", zero_division=0)
+        f = fast_macro_f1(y, blend.argmax(axis=1), POINT_EVAL, N_POINT)
         if f > best_f1:
             best_f1, best_w = f, w
     return best_w, best_f1
 
 
-def random_search_server(probs_list: List[np.ndarray], y, n_samples, rng):
+def random_search_server(probs_list: List[np.ndarray], y, n_samples, rng,
+                         anchor=None, anchor_alpha=1.0):
     n = len(probs_list)
     stack = np.stack(probs_list, axis=0)
     best_w, best_auc = None, -1.0
+    if anchor is not None:
+        anchor = anchor / anchor.sum()
+        blend0 = (anchor[:, None] * stack).sum(axis=0)
+        a0 = roc_auc_score(y, blend0)
+        best_auc, best_w = a0, anchor
     for _ in range(n_samples):
-        w = rng.dirichlet(np.ones(n))
+        w = _draw_weights(rng, n, anchor=anchor, alpha=anchor_alpha)
         blend = (w[:, None] * stack).sum(axis=0)
         auc = roc_auc_score(y, blend)
         if auc > best_auc:
@@ -233,37 +280,37 @@ def random_search_server(probs_list: List[np.ndarray], y, n_samples, rng):
 
 # ---------- Calibration variants ----------
 
-def calib_thr(probs, y, labels, init_cw, n_classes):
-    """Full path: temperature search + greedy CW + scipy Powell."""
+def calib_thr(probs, y, labels, init_cw, n_classes, temp_min=0.5):
+    """Full path: temperature search + greedy CW + scipy Powell.
+
+    `temp_min` lower-bounds the temperature grid (default 0.5; P1.5 uses 0.3 to
+    test whether grid-edge selection in zoo_v2/zoo_v3 was OOF-overfit).
+    """
     best_t, best_f1 = 1.0, -1.0
-    for t in np.arange(0.5, 3.55, 0.1):
+    for t in np.arange(temp_min, 3.55, 0.1):
         scaled = probs ** (1.0 / t)
         scaled = scaled / scaled.sum(axis=1, keepdims=True)
-        f = f1_score(y, scaled.argmax(axis=1), labels=labels,
-                     average="macro", zero_division=0)
+        f = fast_macro_f1(y, scaled.argmax(axis=1), labels, n_classes)
         if f > best_f1:
             best_f1, best_t = f, t
     probs_t = probs ** (1.0 / best_t)
     probs_t /= probs_t.sum(axis=1, keepdims=True)
 
     w = np.array([init_cw.get(c, 1.0) for c in range(n_classes)])
-    cur_f1 = f1_score(y, (probs_t * w).argmax(axis=1), labels=labels,
-                      average="macro", zero_division=0)
+    cur_f1 = fast_macro_f1(y, (probs_t * w).argmax(axis=1), labels, n_classes)
     grid = np.concatenate([np.arange(0.05, 1.0, 0.1), np.arange(1.0, 40.0, 1.0)])
     for c in range(n_classes):
         best_wc, best_local = w[c], cur_f1
         for wc in grid:
             trial = w.copy(); trial[c] = wc
-            f = f1_score(y, (probs_t * trial).argmax(axis=1), labels=labels,
-                         average="macro", zero_division=0)
+            f = fast_macro_f1(y, (probs_t * trial).argmax(axis=1), labels, n_classes)
             if f > best_local:
                 best_local, best_wc = f, wc
         w[c] = best_wc; cur_f1 = best_local
 
     def neg_f1(log_w):
         ww = np.exp(np.clip(log_w, -5, 5))
-        return -f1_score(y, (probs_t * ww).argmax(axis=1), labels=labels,
-                         average="macro", zero_division=0)
+        return -fast_macro_f1(y, (probs_t * ww).argmax(axis=1), labels, n_classes)
     try:
         res = minimize(neg_f1, np.log(np.clip(w, 0.01, 100)),
                        method="Powell", options={"maxiter": 100})
@@ -275,13 +322,12 @@ def calib_thr(probs, y, labels, init_cw, n_classes):
     return float(best_t), w, probs_t, float(cur_f1)
 
 
-def calib_temp(probs, y, labels, n_classes):
+def calib_temp(probs, y, labels, n_classes, temp_min=0.5):
     best_t, best_f1 = 1.0, -1.0
-    for t in np.arange(0.5, 3.55, 0.1):
+    for t in np.arange(temp_min, 3.55, 0.1):
         scaled = probs ** (1.0 / t)
         scaled = scaled / scaled.sum(axis=1, keepdims=True)
-        f = f1_score(y, scaled.argmax(axis=1), labels=labels,
-                     average="macro", zero_division=0)
+        f = fast_macro_f1(y, scaled.argmax(axis=1), labels, n_classes)
         if f > best_f1:
             best_f1, best_t = f, t
     out = probs ** (1.0 / best_t)
@@ -291,14 +337,12 @@ def calib_temp(probs, y, labels, n_classes):
 
 def calib_cw(probs, y, labels, init_cw, n_classes):
     w = np.array([init_cw.get(c, 1.0) for c in range(n_classes)])
-    f = f1_score(y, (probs * w).argmax(axis=1), labels=labels,
-                 average="macro", zero_division=0)
+    f = fast_macro_f1(y, (probs * w).argmax(axis=1), labels, n_classes)
     return 1.0, w, probs, float(f)
 
 
 def calib_none(probs, y, labels, n_classes):
-    f = f1_score(y, probs.argmax(axis=1), labels=labels,
-                 average="macro", zero_division=0)
+    f = fast_macro_f1(y, probs.argmax(axis=1), labels, n_classes)
     return 1.0, np.ones(n_classes), probs, float(f)
 
 
@@ -314,10 +358,8 @@ def per_sn_bucket_ov(pred_a, pred_p, blend_srv, y_a, y_p, y_s, nsn):
             rows.append((name, 0.0, 0))
             ovs.append(0.0)
             continue
-        f_a = f1_score(y_a[mask], pred_a[mask], labels=ACTION_EVAL,
-                       average="macro", zero_division=0)
-        f_p = f1_score(y_p[mask], pred_p[mask], labels=POINT_EVAL,
-                       average="macro", zero_division=0)
+        f_a = fast_macro_f1(y_a[mask], pred_a[mask], ACTION_EVAL, N_ACTION)
+        f_p = fast_macro_f1(y_p[mask], pred_p[mask], POINT_EVAL, N_POINT)
         if len(np.unique(y_s[mask])) < 2:
             auc = 0.5
         else:
@@ -331,12 +373,13 @@ def per_sn_bucket_ov(pred_a, pred_p, blend_srv, y_a, y_p, y_s, nsn):
 
 # ---------- Subset enumeration ----------
 
-def enumerate_subsets():
+def enumerate_subsets(max_models: int = 6):
     A_choices = [[]] + [[g] for g in GROUP_A]
     B_choices = [[]] + [[g] for g in GROUP_B]
     C_choices = [[]] + [[g] for g in GROUP_C]
+    # Group D: at least 1, up to len(GROUP_D) — bounded by max_models in the size filter.
     D_choices = []
-    for r in (1, 2):
+    for r in range(1, len(GROUP_D) + 1):
         for combo in itertools.combinations(GROUP_D, r):
             D_choices.append(list(combo))
     E_choices = [[]] + [[g] for g in GROUP_E]
@@ -347,7 +390,7 @@ def enumerate_subsets():
                 for d in D_choices:
                     for e in E_choices:
                         subset = a + b + c + d + e
-                        if 3 <= len(subset) <= 6:
+                        if 3 <= len(subset) <= max_models:
                             key = tuple(sorted(subset))
                             if key not in seen:
                                 seen.add(key)
@@ -363,17 +406,39 @@ def main():
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED,
                     help="Random-search seed (fixed for reproducibility).")
     ap.add_argument("--top-k", type=int, default=5,
-                    help="Number of top submissions to materialise.")
+                    help="Number of top submissions to materialise (counted within "
+                         "eligible candidates, see --edge-cushion).")
+    ap.add_argument("--max-models", type=int, default=6,
+                    help="Cap blend size (TRAIN_PLAN P1.5 sets this to 5 after "
+                         "zoo_v3 size-6 LB regression).")
+    ap.add_argument("--temp-min", type=float, default=0.5,
+                    help="Lower bound for THR/TEMP temperature search grid. P1.5 "
+                         "sets this to 0.3 to test the zoo_v2/zoo_v3 grid-edge bias.")
+    ap.add_argument("--edge-cushion", type=float, default=0.05,
+                    help="A candidate is 'edge' iff min(t_a, t_p) <= temp_min + cushion. "
+                         "Edge candidates are excluded from the eligible top-K materialisation.")
     ap.add_argument("--ranking-out",
                     default=os.path.join(SUBMISSION_DIR, "zoo_v2_ranking.csv"))
     ap.add_argument("--prefix", default="zoo_v2",
                     help="Submission filename prefix.")
     ap.add_argument("--replace", default=None,
                     help="Comma-separated old:new (e.g. v16_testhist_aug:v16_avg3).")
+    ap.add_argument("--anchor-from", default=None,
+                    help="Path to a prior ranking CSV (e.g. submissions/zoo_v2_ranking.csv) "
+                         "to anchor the search around. P12: weight perturbation around the "
+                         "LB-validated zoo_v2 top-1.")
+    ap.add_argument("--anchor-rank", type=int, default=1,
+                    help="Which rank in the anchor ranking CSV to use (default 1 = top-1).")
+    ap.add_argument("--anchor-alpha", type=float, default=0.1,
+                    help="Convex-combination weight for perturbation: "
+                         "w_new = (1-α)*anchor + α*Dirichlet. L1 drift bounded by 2α. "
+                         "Default 0.1 → max L1 drift 0.2.")
     args = ap.parse_args()
 
     print("=== blend_zoo_v2 - purpose-built N-way blender ===")
-    print(f"seed={args.seed}  n_samples={args.n_samples}  top_k={args.top_k}")
+    print(f"seed={args.seed}  n_samples={args.n_samples}  top_k={args.top_k}  "
+          f"max_models={args.max_models}  temp_min={args.temp_min}  "
+          f"edge_cushion={args.edge_cushion}")
     rng = np.random.default_rng(args.seed)
 
     replace_map: Dict[str, str] = {}
@@ -396,7 +461,29 @@ def main():
     print(f"Test n={len(test_uid)}.")
     print(f"All hard alignment checks passed.")
 
-    raw_subsets = list(enumerate_subsets())
+    # P12 anchor mode: restrict the search to the anchor's exact subset and
+    # sample weights as convex combinations of (anchor, fresh Dirichlet).
+    anchor_per_subset: Dict[Tuple[str, ...], Dict[str, np.ndarray]] = {}
+    if args.anchor_from:
+        print(f"\n=== P12 anchor mode ===")
+        print(f"  anchor_from={args.anchor_from}  rank={args.anchor_rank}  alpha={args.anchor_alpha}")
+        anc_df = pd.read_csv(args.anchor_from)
+        anc = anc_df[anc_df["rank"] == args.anchor_rank].iloc[0]
+        anc_tags = anc["subset"].split("+")
+        anc_w_a = np.array([float(x) for x in anc["w_a"].split(",")])
+        anc_w_p = np.array([float(x) for x in anc["w_p"].split(",")])
+        anc_w_s = np.array([float(x) for x in anc["w_s"].split(",")])
+        # Reorder weights so they match sorted(set(remap(tags))) — the canonical
+        # enumeration order used by the search loop.
+        used_anchor = sorted(set(remap(t) for t in anc_tags))
+        order = [anc_tags.index(t) for t in used_anchor]
+        anchor_per_subset[tuple(used_anchor)] = {
+            "w_a": anc_w_a[order], "w_p": anc_w_p[order], "w_s": anc_w_s[order],
+        }
+        print(f"  anchor subset (sorted): {used_anchor}")
+        print(f"  anchor weights aligned to sorted order; search restricted to this subset only.")
+
+    raw_subsets = list(enumerate_subsets(max_models=args.max_models))
     seen = set()
     unique_subsets: List[Tuple[List[str], List[str]]] = []
     for orig in raw_subsets:
@@ -407,6 +494,16 @@ def main():
         if key not in seen:
             seen.add(key)
             unique_subsets.append((orig, used))
+
+    # Anchor mode: keep only the anchor's subset (other subsets get no perturbation).
+    if anchor_per_subset:
+        anchor_keys = set(anchor_per_subset.keys())
+        unique_subsets = [(o, u) for (o, u) in unique_subsets if tuple(u) in anchor_keys]
+        if not unique_subsets:
+            raise AssertionError(
+                f"P12 anchor subset {list(anchor_per_subset.keys())[0]} not in enumeration "
+                "(check --max-models / --replace consistency).")
+        print(f"  P12: search restricted to {len(unique_subsets)} subset(s).")
     print(f"Enumerated {len(unique_subsets)} unique subsets after remap and de-dupe.")
 
     rows: List[Dict] = []
@@ -418,9 +515,19 @@ def main():
         oof_pts = [comp[t]["oof_pt"] for t in sub_used]
         oof_srvs = [comp[t]["oof_srv"] for t in sub_used]
 
-        w_a, raw_f1_a = random_search_action(oof_acts, y_a, args.n_samples, rng)
-        w_p, raw_f1_p = random_search_point(oof_pts, y_p, args.n_samples, rng)
-        w_s, raw_auc = random_search_server(oof_srvs, y_s, args.n_samples, rng)
+        # P12 anchor mode: pull per-task anchor weights for this subset, if any.
+        anc = anchor_per_subset.get(tuple(sub_used), None)
+        anc_a = anc["w_a"] if anc is not None else None
+        anc_p = anc["w_p"] if anc is not None else None
+        anc_s = anc["w_s"] if anc is not None else None
+        a_alpha = args.anchor_alpha if anc is not None else 1.0
+
+        w_a, raw_f1_a = random_search_action(oof_acts, y_a, args.n_samples, rng,
+                                              anchor=anc_a, anchor_alpha=a_alpha)
+        w_p, raw_f1_p = random_search_point(oof_pts, y_p, args.n_samples, rng,
+                                             anchor=anc_p, anchor_alpha=a_alpha)
+        w_s, raw_auc = random_search_server(oof_srvs, y_s, args.n_samples, rng,
+                                             anchor=anc_s, anchor_alpha=a_alpha)
 
         # Hard check: weight vectors sum to 1.
         for nm, w in [("w_a", w_a), ("w_p", w_p), ("w_s", w_s)]:
@@ -441,11 +548,11 @@ def main():
 
         for calib in ["THR", "TEMP", "CW", "NONE"]:
             if calib == "THR":
-                t_a, ww_a, pa_cal, f1_a = calib_thr(blend_a, y_a, ACTION_EVAL, ACTION_CW, N_ACTION)
-                t_p, ww_p, pp_cal, f1_p = calib_thr(blend_p, y_p, POINT_EVAL, POINT_CW, N_POINT)
+                t_a, ww_a, pa_cal, f1_a = calib_thr(blend_a, y_a, ACTION_EVAL, ACTION_CW, N_ACTION, temp_min=args.temp_min)
+                t_p, ww_p, pp_cal, f1_p = calib_thr(blend_p, y_p, POINT_EVAL, POINT_CW, N_POINT, temp_min=args.temp_min)
             elif calib == "TEMP":
-                t_a, ww_a, pa_cal, f1_a = calib_temp(blend_a, y_a, ACTION_EVAL, N_ACTION)
-                t_p, ww_p, pp_cal, f1_p = calib_temp(blend_p, y_p, POINT_EVAL, N_POINT)
+                t_a, ww_a, pa_cal, f1_a = calib_temp(blend_a, y_a, ACTION_EVAL, N_ACTION, temp_min=args.temp_min)
+                t_p, ww_p, pp_cal, f1_p = calib_temp(blend_p, y_p, POINT_EVAL, N_POINT, temp_min=args.temp_min)
             elif calib == "CW":
                 t_a, ww_a, pa_cal, f1_a = calib_cw(blend_a, y_a, ACTION_EVAL, ACTION_CW, N_ACTION)
                 t_p, ww_p, pp_cal, f1_p = calib_cw(blend_p, y_p, POINT_EVAL, POINT_CW, N_POINT)
@@ -504,10 +611,28 @@ def main():
     for r in rows:
         r["spread_penalised_score"] = (
             r["oof_ov"] - 0.5 * max(0.0, r["sn_spread"] - ref_spread))
+        # Edge-rejection annotation (Codex 2026-05-05): TEMP/THR candidates whose
+        # chosen temperature lies on the lower edge of the search grid are suspect.
+        # CW and NONE never set t_a/t_p (they're 1.0 by construction), so flag only
+        # TEMP/THR variants here.
+        if r["calibration"] in ("THR", "TEMP"):
+            r["temp_at_edge"] = (
+                min(r["_t_a"], r["_t_p"]) <= args.temp_min + args.edge_cushion)
+        else:
+            r["temp_at_edge"] = False
 
     rows.sort(key=lambda r: r["spread_penalised_score"], reverse=True)
     for rank, r in enumerate(rows, start=1):
         r["rank"] = rank
+
+    # Eligible rank: rank among non-edge candidates only. (Codex 2026-05-05)
+    eligible_idx = 0
+    for r in rows:
+        if r["temp_at_edge"]:
+            r["eligible_rank"] = ""  # empty cell in CSV (NaN-equivalent)
+        else:
+            eligible_idx += 1
+            r["eligible_rank"] = eligible_idx
 
     # Hard check (post-sort): all weight vectors sum to 1.
     for r in rows:
@@ -519,8 +644,8 @@ def main():
 
     # Pre-write the ranking CSV (without filenames yet).
     keep_cols = [
-        "rank", "subset", "n_models", "calibration",
-        "w_a", "w_p", "w_s", "t_a", "t_p",
+        "rank", "eligible_rank", "subset", "n_models", "calibration",
+        "w_a", "w_p", "w_s", "t_a", "t_p", "temp_at_edge",
         "f1_a", "f1_p", "auc", "oof_ov",
         "sn_spread", "sn_buckets", "spread_penalised_score",
     ]
@@ -528,16 +653,33 @@ def main():
     df = pd.DataFrame(df_records)
     df["file"] = ""
 
-    # Generate top-K submission CSVs.
-    print(f"\n=== Top-{args.top_k} candidates (spread-penalised) ===")
-    print(f"{'rank':>4}  {'calib':<5}  {'oof_ov':>7}  {'spread':>7}  {'sps':>7}  {'subset'}")
+    # Print global top-K (informational; some may be edge-rejected).
+    print(f"\n=== Global top-{args.top_k} candidates (by spread_penalised_score) ===")
+    print(f"{'rank':>4}  {'elig':>4}  {'calib':<5}  {'oof_ov':>7}  {'spread':>7}  "
+          f"{'sps':>7}  {'edge':<5}  {'subset'}")
     for r in rows[:args.top_k]:
-        print(f"{r['rank']:>4}  {r['calibration']:<5}  "
+        elig = r["eligible_rank"] if r["eligible_rank"] != "" else "—"
+        print(f"{r['rank']:>4}  {str(elig):>4}  {r['calibration']:<5}  "
+              f"{r['oof_ov']:>7.4f}  {r['sn_spread']:>7.4f}  "
+              f"{r['spread_penalised_score']:>7.4f}  "
+              f"{'YES' if r['temp_at_edge'] else 'no':<5}  {r['subset']}")
+
+    # Materialise the top-K *eligible* rows as submission CSVs (Codex 2026-05-05).
+    eligible_rows = [r for r in rows if not r["temp_at_edge"]][:args.top_k]
+    print(f"\n=== Eligible top-{args.top_k} candidates "
+          f"(temp interior, materialised as submissions) ===")
+    print(f"{'elig':>4}  {'rank':>4}  {'calib':<5}  {'oof_ov':>7}  {'spread':>7}  "
+          f"{'sps':>7}  {'subset'}")
+    for r in eligible_rows:
+        print(f"{r['eligible_rank']:>4}  {r['rank']:>4}  {r['calibration']:<5}  "
               f"{r['oof_ov']:>7.4f}  {r['sn_spread']:>7.4f}  "
               f"{r['spread_penalised_score']:>7.4f}  {r['subset']}")
 
+    if not eligible_rows:
+        print("  (no eligible candidates — all top-K are edge-rejected!)")
+
     print()
-    for r in rows[:args.top_k]:
+    for r in eligible_rows:
         sub_used = list(r["_sub_used"])
         test_acts = [comp[t]["test_act"] for t in sub_used]
         test_pts = [comp[t]["test_pt"] for t in sub_used]
@@ -563,7 +705,7 @@ def main():
         for nm, arr in [("test_act", ta_t), ("test_pt", tp_t), ("test_srv", ts)]:
             if not np.isfinite(arr).all():
                 raise AssertionError(
-                    f"NaN/Inf in {nm} for top-{r['rank']} subset {sub_used}")
+                    f"NaN/Inf in {nm} for elig-{r['eligible_rank']} subset {sub_used}")
 
         prov = "_".join(
             t.replace("v16_testhist_aug", "v16")
@@ -573,7 +715,7 @@ def main():
              .replace("v12_5f", "v125f")
             for t in sub_used
         )
-        fname = (f"submission_{args.prefix}_top{r['rank']}_"
+        fname = (f"submission_{args.prefix}_elig{r['eligible_rank']}_"
                  f"{r['calibration'].lower()}_{prov}.csv")
         out_path = os.path.join(SUBMISSION_DIR, fname)
         sub = pd.DataFrame({
@@ -582,12 +724,13 @@ def main():
             "pointId": pred_p,
             "serverGetPoint": ts,
         })
-        sub.to_csv(out_path, index=False)
+        sub.to_csv(out_path, index=False, lineterminator="\n")
         df.loc[df["rank"] == r["rank"], "file"] = fname
-        print(f"  rank={r['rank']:>2}  ->  {fname}")
+        print(f"  elig={r['eligible_rank']:>2} (global rank {r['rank']:>3})  ->  {fname}")
 
-    df.to_csv(args.ranking_out, index=False)
-    print(f"\nSaved ranking: {args.ranking_out}  ({len(df)} entries)")
+    df.to_csv(args.ranking_out, index=False, lineterminator="\n")
+    print(f"\nSaved ranking: {args.ranking_out}  ({len(df)} entries, "
+          f"{sum(1 for r in rows if not r['temp_at_edge'])} eligible)")
 
 
 if __name__ == "__main__":

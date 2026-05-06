@@ -1,0 +1,5 @@
+P11 player-disjoint holdout meta
+seed=42  frac=0.15
+distinct_players=166  held_out=25
+holdout_rows=8284/69712
+holdout_player_ids=[np.int64(12), np.int64(14), np.int64(20), np.int64(29), np.int64(30), np.int64(60), np.int64(63), np.int64(72), np.int64(80), np.int64(81), np.int64(94), np.int64(103), np.int64(110), np.int64(111), np.int64(113), np.int64(117), np.int64(123), np.int64(126), np.int64(129), np.int64(134), np.int64(145), np.int64(147), np.int64(149), np.int64(152), np.int64(161)]
