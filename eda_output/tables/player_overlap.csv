@@ -1,0 +1,5 @@
+metric,value
+train_unique_players,166.0
+test_new_unique_players,71.0
+overlap_unique_players,40.0
+test_player_overlap_rate,0.5633802816901409

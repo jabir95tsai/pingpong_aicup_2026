@@ -1,0 +1,57 @@
+{
+  "n_strokes_raw": 52356,
+  "n_matches": 58,
+  "n_rallies_raw": 4944,
+  "n_rallies_kept": 4806,
+  "stroke_type_distribution": {
+    "放小球": 9262,
+    "挑球": 8831,
+    "擋小球": 5628,
+    "長球": 5000,
+    "殺球": 4032,
+    "切球": 3942,
+    "發短球": 3054,
+    "推球": 2797,
+    "點扣": 2371,
+    "過度切球": 1087,
+    "未知球種": 1078,
+    "發長球": 1029,
+    "勾球": 877,
+    "平球": 794,
+    "後場抽平球": 783,
+    "撲球": 660,
+    "防守回挑": 612,
+    "防守回抽": 493,
+    "小平球": 26
+  },
+  "type_idx_unknown_pct": 4.135151654060661,
+  "shot_count_quantiles": {
+    "p25": 5.0,
+    "p50": 9.0,
+    "p75": 14.0,
+    "p95": 27.0,
+    "max": 32
+  },
+  "source_cols_used": [
+    "rally",
+    "ball_round",
+    "player",
+    "server",
+    "type",
+    "aroundhead",
+    "backhand",
+    "hit_area",
+    "landing_area"
+  ],
+  "forbidden_cols": [
+    "frame_num",
+    "getpoint_player",
+    "landing_x",
+    "landing_y",
+    "opponent_location_x",
+    "opponent_location_y",
+    "player_location_x",
+    "player_location_y",
+    "time"
+  ]
+}

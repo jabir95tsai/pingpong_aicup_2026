@@ -1,0 +1,114 @@
+{
+  "tag": "meta_stack",
+  "components": [
+    "v16_testhist_aug",
+    "v16_avg3",
+    "v16_seed1",
+    "v16_seed2",
+    "v14_avg3",
+    "v14_seed0",
+    "v14_seed1",
+    "v14_seed2",
+    "v14_recvhand",
+    "v12_5f",
+    "v11",
+    "v11plus",
+    "v11_aug",
+    "v13"
+  ],
+  "n_components": 14,
+  "hyperparameters": {
+    "num_leaves": 8,
+    "min_data_in_leaf": 200,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "learning_rate": 0.05,
+    "n_boost": 1000,
+    "es": 80,
+    "seed": 42
+  },
+  "n_folds": 5,
+  "outer_cv": "GroupKFold(5) by match",
+  "outer_cv_optimism_caveat": "Stack OOF on per-row OOF features can be optimistic; not a fully nested stack and not a clean LB-transfer proof.",
+  "n_train_rows": 69712,
+  "n_train_kept": 69712,
+  "n_test_rows": 1845,
+  "best_single_metrics": {
+    "F1_a": {
+      "value": 0.3896289161212162,
+      "tag": "v16_avg3"
+    },
+    "F1_p": {
+      "value": 0.21620837286193115,
+      "tag": "v14_seed0"
+    },
+    "AUC": {
+      "value": 0.6116794195009276,
+      "tag": "v14_avg3"
+    }
+  },
+  "meta_stack_oof_metrics": {
+    "F1_a": 0.3731533027132228,
+    "F1_p": 0.187618124758463,
+    "AUC": 0.6114493640163594,
+    "OV": 0.3465984437919462
+  },
+  "stop_gates": {
+    "per_task_threshold_delta": 0.001,
+    "combined_threshold": 0.3805,
+    "f1_a_pass": false,
+    "f1_p_pass": false,
+    "auc_pass": false,
+    "combined_pass": false
+  },
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "F1_a": 0.36225839762304585,
+      "F1_p": 0.1665881408247627,
+      "AUC": 0.6063353788447762,
+      "OV": 0.3328056911480787,
+      "n_train": 55769,
+      "n_val": 13943
+    },
+    {
+      "fold": 2,
+      "F1_a": 0.3488351852725323,
+      "F1_p": 0.1754900626407951,
+      "AUC": 0.5992198353941591,
+      "OV": 0.3295740662441628,
+      "n_train": 55769,
+      "n_val": 13943
+    },
+    {
+      "fold": 3,
+      "F1_a": 0.4068787258620714,
+      "F1_p": 0.21662136719686612,
+      "AUC": 0.6321658710330774,
+      "OV": 0.37583321143019055,
+      "n_train": 55770,
+      "n_val": 13942
+    },
+    {
+      "fold": 4,
+      "F1_a": 0.38554243269833394,
+      "F1_p": 0.15818667444764292,
+      "AUC": 0.6142560195310052,
+      "OV": 0.34034284676459176,
+      "n_train": 55770,
+      "n_val": 13942
+    },
+    {
+      "fold": 5,
+      "F1_a": 0.3306014461411872,
+      "F1_p": 0.17742752447146481,
+      "AUC": 0.6128310724113123,
+      "OV": 0.32577780272732326,
+      "n_train": 55770,
+      "n_val": 13942
+    }
+  ],
+  "generated_at": "2026-05-09 15:11:55",
+  "submission_status": "HELD \u2014 no T3 approval implied by this script."
+}

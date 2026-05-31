@@ -1,0 +1,63 @@
+{
+  "tag": "sgp_prefix_v3_full_oldtest",
+  "feature_count": 65,
+  "feature_profile": "core",
+  "audits": [
+    {
+      "name": "strict_prefix_containment",
+      "samples": 100,
+      "failures": 0
+    },
+    {
+      "name": "banned_names",
+      "n_features": 65,
+      "violations": 0
+    },
+    {
+      "name": "train_test_schema",
+      "n_features": 65,
+      "schema_match": true
+    },
+    {
+      "name": "finite_values_train",
+      "n_bad": 0,
+      "bad_cols": []
+    },
+    {
+      "name": "finite_values_test",
+      "n_bad": 0,
+      "bad_cols": []
+    },
+    {
+      "name": "test_shape",
+      "n_rows": 1845,
+      "n_rallies": 1845
+    }
+  ],
+  "diagnostics": {
+    "counts_only": {
+      "name": "counts_only_baseline",
+      "auc": 0.5657343284871857,
+      "verdict": "OK"
+    },
+    "no_length": {
+      "name": "no_length_ablation",
+      "auc": 0.60136030643328,
+      "n_features": 64
+    },
+    "logistic": {
+      "name": "logistic_baseline",
+      "auc": 0.5717397747176856
+    }
+  },
+  "fold_aucs": {
+    "1": 0.6030104235013798,
+    "2": 0.602152548586349,
+    "3": 0.6057006514420512,
+    "4": 0.600280979962364,
+    "5": 0.5966016382824498
+  },
+  "baseline_fold1_auc": 0.6104,
+  "gate_threshold": 0.62,
+  "gate_verdict": "FAIL_PARK"
+}

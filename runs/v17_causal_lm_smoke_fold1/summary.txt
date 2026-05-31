@@ -1,0 +1,34 @@
+v17_causal_lm Fold-1 SMOKE summary
+============================================================
+Wall: 21.2 min
+Hard cap: 2.0h (NOT REACHED)
+
+v17 smoke Fold-1 OOF:
+  F1_action = 0.2998
+  F1_point  = 0.1789
+  SGP AUC   = 0.5247
+  Joint OV  = 0.2964
+
+Fold-1 baselines:
+  v11_aug: OV=0.3126  F1_a=0.3216  F1_p=0.1897  AUC=0.5406
+  v11: OV=0.3086  F1_a=0.3001  F1_p=0.2009  AUC=0.5410
+  v14_seed2: OV=0.3442  F1_a=0.3680  F1_p=0.1919  AUC=0.6015
+
+Correlation matrix (Pearson r, macro-class avg):
+  vs v11_aug: r_action=0.5807  r_point=0.5343
+  vs v11: r_action=0.5685  r_point=0.5584
+  vs v14_seed2: r_action=0.5644  r_point=0.5186
+
+Primary gate: OV >= 0.3036 ¡÷ FAIL
+Diversity gate (r_a_aug<=0.85 AND r_p_aug<=0.85) ¡÷ PASS
+
+RECOMMENDATION: DIVERSITY_PASS ¡X open R-014 explicitly tagged 'diversity candidate only'; full run requires Jabir T3 OK on lower expected lift
+
+All audits:
+  train_val_match_disjoint: PASS
+  no_forbidden_token_fields: PASS
+  no_target_in_prefix: PASS
+  fold_safe_pretrain: PASS
+  test_prefix_length: PASS
+  no_forbidden_in_model: PASS
+  sgp_loss_count: PASS

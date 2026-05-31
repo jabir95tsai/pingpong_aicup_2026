@@ -1,0 +1,172 @@
+{
+  "train_val_match_disjoint": {
+    "audit_train_val_match_disjoint": "PASS",
+    "n_train_matches": 174,
+    "n_val_matches": 42
+  },
+  "no_forbidden_token_fields": {
+    "audit_8D_token_fields": "PASS",
+    "token_fields": [
+      "strengthId",
+      "actionId",
+      "shooter_side",
+      "handId",
+      "pointId",
+      "strikeId",
+      "positionId",
+      "spinId"
+    ],
+    "meta_fields": [
+      "sex",
+      "numberGame"
+    ],
+    "forbidden_set": [
+      "gamePlayerId",
+      "gamePlayerOtherId",
+      "match",
+      "rally_uid",
+      "serverGetPoint"
+    ]
+  },
+  "no_target_in_prefix": {
+    "audit_8B_no_target_in_prefix": "PASS",
+    "n_supervised_checked": 5000,
+    "samples": [
+      {
+        "next_sn": 2,
+        "input_length": 1,
+        "ok": true
+      },
+      {
+        "next_sn": 3,
+        "input_length": 2,
+        "ok": true
+      },
+      {
+        "next_sn": 4,
+        "input_length": 3,
+        "ok": true
+      },
+      {
+        "next_sn": 5,
+        "input_length": 4,
+        "ok": true
+      },
+      {
+        "next_sn": 6,
+        "input_length": 5,
+        "ok": true
+      },
+      {
+        "next_sn": 7,
+        "input_length": 6,
+        "ok": true
+      },
+      {
+        "next_sn": 8,
+        "input_length": 7,
+        "ok": true
+      },
+      {
+        "next_sn": 9,
+        "input_length": 8,
+        "ok": true
+      },
+      {
+        "next_sn": 10,
+        "input_length": 9,
+        "ok": true
+      },
+      {
+        "next_sn": 11,
+        "input_length": 10,
+        "ok": true
+      }
+    ]
+  },
+  "fold_safe_pretrain": {
+    "audit_8A_fold_safe": "PASS",
+    "phase1a_rallies": 1337,
+    "phase1b_rallies": 12113,
+    "fold1_train_rallies": 12113,
+    "fold1_val_rallies": 2882,
+    "phase1b_missing_from_train_(skipped_e.g._<2_shots)": 0
+  },
+  "test_prefix_length": {
+    "audit_8C_test_prefix_length": "PASS",
+    "samples": [
+      {
+        "rally_uid": "15194",
+        "expected": 4,
+        "actual": 4,
+        "ok": true
+      },
+      {
+        "rally_uid": "15198",
+        "expected": 4,
+        "actual": 4,
+        "ok": true
+      },
+      {
+        "rally_uid": "15210",
+        "expected": 5,
+        "actual": 5,
+        "ok": true
+      },
+      {
+        "rally_uid": "15213",
+        "expected": 3,
+        "actual": 3,
+        "ok": true
+      },
+      {
+        "rally_uid": "15217",
+        "expected": 3,
+        "actual": 3,
+        "ok": true
+      },
+      {
+        "rally_uid": "15220",
+        "expected": 3,
+        "actual": 3,
+        "ok": true
+      },
+      {
+        "rally_uid": "15223",
+        "expected": 3,
+        "actual": 3,
+        "ok": true
+      },
+      {
+        "rally_uid": "15226",
+        "expected": 4,
+        "actual": 4,
+        "ok": true
+      },
+      {
+        "rally_uid": "15229",
+        "expected": 3,
+        "actual": 3,
+        "ok": true
+      },
+      {
+        "rally_uid": "15232",
+        "expected": 2,
+        "actual": 2,
+        "ok": true
+      }
+    ],
+    "n_test_rallies_checked": 1337,
+    "violations_in_first_50_sample": 0
+  },
+  "no_forbidden_in_model": {
+    "audit_8D_model_modules": "PASS",
+    "n_modules": 75
+  },
+  "sgp_loss_count": {
+    "audit_8E_sgp_loss_count": "PASS",
+    "phase1_sgp_loss_count": 0,
+    "phase2_sgp_loss_count": 1673070,
+    "phase2_train_rally_count": 1673070
+  }
+}
