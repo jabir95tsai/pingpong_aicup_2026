@@ -54,3 +54,17 @@ Thumbs.db
 
 # Claude internal
 .claude/
+
+# Data blobs + external clones (local only, not versioned)
+data/external/
+data/*.parquet
+data/*.parquet.manifest.json
+data/*_distribution.json
+/dataset-metadata.json
+
+# Claude runtime state
+.claude/goal_monitor/
+
+# Nested data/array blobs (code/docs-only repo)
+*.npz
+audits/package_v8_0.4419_20260521/data/
