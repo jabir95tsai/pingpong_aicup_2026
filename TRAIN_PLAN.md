@@ -1,5 +1,263 @@
 # TRAIN_PLAN
-## Round: 2026-05-05 — zoo_v2 LB win, P2 LB regression, pivot to P3
+
+## Round: 2026-05-10 — Path A pseudo-label V1 (post zoo_v11 round)
+
+Active strategy: STRATEGY.md v3 §3 Path A. Workflow rules: workflow v2.1
+(see `COLLABORATION_WORKFLOW.md`; review outcomes are now folded into the stable workflow).
+
+### Active R-### entries
+- **R-009** (preflight, T2-component) — Path A pseudo-label V1
+  (action + point only, NO SGP). Drafted in `REVIEW_QUEUE.md` Pending.
+  Awaiting Codex APPROVE / APPROVE_WITH_FIXES, then Jabir's separate
+  explicit go-ahead to launch training. T0 prerequisite already complete:
+  `data/pseudo_v1.parquet` + `data/pseudo_v1_distribution.json`.
+
+### Held / not-yet-approved
+- Path B causal LM exploration (STRATEGY §9). Design only; no R-010 open
+  per Jabir 2026-05-10. Smoke + commitment require Jabir explicit unlock.
+- Path C feature engineering (STRATEGY §3.C). Pending Path A outcome.
+
+### Once R-009 approved + Jabir greenlight: launch sequence
+1. Add `--pseudo-parquet`, `--pseudo-mode`, `--pseudo-weight` flags to
+   `src/train_v14.py`.
+2. Regenerate `data/pseudo_v1.parquet` with the Codex-picked thresholds
+   (V1a or V1b).
+3. Smoke (Fold 1 only, ~30 min CPU): F1_a vs v14_seed2 baseline.
+4. If smoke passes (≥ +0.005 F1_a): full 5-fold (~3-4 h CPU).
+5. Post-train ARTIFACT_OK review for any submission candidate.
+6. T3 review for LB upload.
+
+### Submission slots policy
+Per `COLLABORATION_WORKFLOW.md` §4.6 (workflow v2.1):
+- Slot eligibility = predicted +0.002 LB lift OR new structural component
+  first LB validation OR Codex-approved structural change.
+- v14_pseudo_v1 first upload qualifies as new structural component.
+
+---
+
+## Historical: Round 2026-05-06 — POST-LB-RESET regeneration + re-validation
+(content below archived for reference; superseded by 2026-05-10 round above)
+
+
+⚠ **Competition reset 2026-05-06**: organisers released `data/test_new.csv` (1,845
+rallies vs old 1,236) and wiped the public leaderboard. ALL prior LB results in
+RESULTS.md are invalid on the new LB. See RESULTS.md top section for the schema
+diff. Locked Rules 9–13 in STRATEGY.md are now PROVISIONAL pending NEW-LB
+re-validation.
+
+**This round's primary objectives** (in order):
+1. Regenerate test predictions for current-best blend components on `test_new.csv`.
+2. Re-establish a baseline NEW-LB score by submitting the OLD-LB-best subset
+   (zoo_v6 elig1: NONE, v11_aug + v11plus + v13 + v14_seed2 + v16) on new test.
+3. Re-validate the two strongest OLD-LB findings on NEW LB:
+   (a) NONE > THR (Locked Rule 11, PROVISIONAL)
+   (b) v11_aug structurally critical (Locked Rule 12, PROVISIONAL)
+4. ONLY AFTER baseline + re-validation: pursue step-change bets (C / B / A from
+   prior round's Codex-revised plan).
+
+---
+
+## Codex implementation update (2026-05-06)
+
+Applied local support for the reset without renaming data files:
+
+- `src/config.py` now automatically prefers `data/test_new.csv` when present.
+  Override with `PINGPONG_TEST_FILE` if old-test forensics are needed.
+- `src/build_test_history_pairs.py` now writes `data/test_history_pairs_new.parquet`
+  by default when the active test is `test_new.csv`.
+- `data/test_history_pairs_new.parquet` has been rebuilt and verified:
+  5,668 rows / 1,845 rallies / 3,823 aug pairs, all `serverGetPoint=-1`,
+  all `is_aug=1`.
+- `src/train_v16_testhist_aug.py` and `src/train_v11_transformer.py` now compute
+  expected aug rows/pairs dynamically from the parquet, so they no longer fail on
+  the old 3,589/2,353 constants.
+- `src/blend_zoo_v2.py` now supports `--only-tags`, so we can regenerate and blend
+  only the old-best 5 components instead of retraining the full 10-tag zoo menu.
+- Direct V11/V16 CSV writers now use Unix LF via `lineterminator="\n"`.
+
+Important local fact: the 1,236 overlapping old-test rally histories are identical
+on the 17 shared columns, but new test adds 609 rallies. Old submissions remain
+invalid because they have only 1,236 rows.
+
+---
+
+## Concrete Phase 0 — Active-test verification + doc sync (2026-05-06, no compute, ~15 min)
+
+Steps (will be executed at start of next session):
+
+```powershell
+python -c "import sys; sys.path.insert(0,'src'); import config; print(config.TEST_FILE); print(config.TEST_PATH)"
+python -u src\build_test_history_pairs.py
+python -m py_compile src\config.py src\build_test_history_pairs.py src\train_v16_testhist_aug.py src\train_v11_transformer.py src\blend_zoo_v2.py
+```
+
+Acceptance:
+- `config.TEST_FILE == "test_new.csv"`
+- `data/test_history_pairs_new.parquet` exists with 5,668 rows / 3,823 pairs
+- All training scripts pick up new test automatically via `TEST_PATH = data/test_new.csv`
+
+Do not rename `data/test.csv`; keep it as old-test forensic reference.
+
+---
+
+## Concrete Phase 1 — Rebuild aug parquet from test_new (~5 min, no training)
+
+```powershell
+python -u src\build_test_history_pairs.py > logs\build_test_history_pairs_new.log 2>&1
+```
+
+Acceptance:
+- New `data/test_history_pairs_new.parquet` written
+- Raw rows: 5,668; expected pairs: 3,823
+- Log shows `NO_TRUE_TEST_SGP_USED = True`
+- No constant edit required; V16/V11 aug guards are now dynamic
+
+This is a one-time pure-data step. No model training.
+
+---
+
+## Concrete Phase 2 — Retrain the current-best blend's components
+
+The 5 components in zoo_v6 elig1 (OLD-LB best 0.3749) need re-trained test
+predictions because:
+- v11_aug + v16: depend on aug parquet (rebuilt in Phase 1)
+- v11plus + v14_seed2 + v13: train on TRAIN only, but their test predictions
+  are length-1236 arrays in `oof_predictions/{tag}_test_*.npy` — must regenerate
+  to length-1,845 over `test_new.csv`
+
+Re-training is required because no model checkpoints were saved during the
+original training. (Future: save model state to enable inference-only re-runs.)
+
+### 2a. v14_seed2 retrain (CPU, ~200 min)
+
+```powershell
+python -u src\train_v14.py --folds 5 --skip-cb --tag v14_seed2 --seed 51966 > logs\v14_seed2_newtest.log 2>&1
+```
+
+OOF should reproduce (deterministic with seed); test predictions will be
+length-1,845. Existing `oof_predictions/v14_seed2_*.npy` will be OVERWRITTEN.
+
+### 2b. v13 retrain (CPU, ~60 min)
+
+```powershell
+python -u src\train_v13.py --folds 5 --skip-cb --tag v13 > logs\v13_newtest.log 2>&1
+```
+
+`train_v13.py` accepts `--folds`, `--skip-cb`, and `--tag`.
+
+### 2c. v16_testhist_aug retrain (CPU, ~180 min)
+
+```powershell
+python -u src\train_v16_testhist_aug.py --aug data\test_history_pairs_new.parquet --folds 5 --skip-cb --tag v16_testhist_aug --seed 42 > logs\v16_testhist_aug_newtest.log 2>&1
+```
+
+Aug guards are dynamic now; expected pairs should print as 3,823.
+
+### 2d. v11plus retrain (GPU, ~80 min)
+
+`v11plus` is V11 with class-weight escalation. Confirm the exact original command
+before starting; current best guess:
+
+```powershell
+python -u src\train_v11_transformer.py --tag v11plus --point-w-scale 2.0 > logs\v11plus_newtest.log 2>&1
+```
+
+### 2e. v11_aug retrain (GPU, ~80 min)
+
+```powershell
+python -u src\train_v11_transformer.py --aug-parquet data\test_history_pairs_new.parquet --tag v11_aug > logs\v11_aug_newtest.log 2>&1
+```
+
+After Phase 1's aug parquet rebuild, this will generate v11_aug trained on
+new-test-history aug. server-mask diagnostic must read 0 (Codex P6 requirement).
+
+### Optional 2f. v11 retrain only if we decide to re-test THR/zoo_v2 family
+
+```powershell
+python -u src\train_v11_transformer.py --tag v11 > logs\v11_newtest.log 2>&1
+```
+
+Do not run this for the first baseline unless slot planning explicitly needs a
+v11-based comparison. The first NEW-LB baseline can be produced from the old-best
+5 tags without v11.
+
+### Total Phase 2 cost
+
+- Sequential (CPU + GPU not parallel): ~600 min ≈ 10 h
+- Parallel (CPU on Track A, GPU on Track B): max(440, 160) ≈ 7.5 h
+  - Track A (CPU): v14_seed2 + v13 + v16 = 200 + 60 + 180 = 440 min
+  - Track B (GPU): v11plus + v11_aug = 80 + 80 = 160 min
+
+**Recommended: parallel where the user's hardware allows.**
+
+---
+
+## Concrete Phase 3 — Regenerate zoo blends for current-best subset (~15 min)
+
+Once Phase 2 completes, the 5 old-best component artifacts have new length-1,845
+test predictions. Use `--only-tags` so stale 1,236-row artifacts from unrelated
+tags do not break hard alignment.
+
+```powershell
+python -u src\blend_zoo_v2.py --only-tags v11_aug,v11plus,v13,v14_seed2,v16_testhist_aug --max-models 5 --temp-min 0.5 --prefix zoo_v8 --ranking-out submissions\zoo_v8_ranking.csv > logs\zoo_v8.log 2>&1
+```
+
+Acceptance:
+- `Test n=1845` in log
+- All materialized submission files validate against `data/test_new.csv`
+- At least one materialized candidate exactly matches the old-best subset
+  `v11_aug+v11plus+v13+v14_seed2+v16_testhist_aug`, preferably NONE calibration
+
+---
+
+## Concrete Phase 4 — NEW LB submission order
+
+| Slot | Candidate | Tests |
+|---|---|---|
+| 1 | zoo_v8 NONE matching OLD-LB winner (v11_aug+v11plus+v13+v14_seed2+v16) | Re-establishes baseline on reset LB |
+| 2 | Best THR/TEMP candidate from the SAME refreshed 5-tag set, only if OOF/P11 is close | Re-validates calibration transfer with less risk than no-v11_aug |
+| 3 | Hold for post-slot-1 result OR run Bet B/C smoke winner | Do not burn on no-v11_aug unless slot-1 is strong and we explicitly want a structural diagnostic |
+
+Do **not** prioritize the old no-v11_aug diagnostic as slot 2. It already failed
+badly on the old LB (0.3547), and the reset means the first priority is to regain
+a valid score, not to spend slots on a likely-low-EV ablation.
+
+---
+
+## Phase 5 — Step-change bets (after Phase 4 baseline established)
+
+After the diagnostic gauntlet locks in transfer patterns on NEW LB, resume the
+prior round's plan from the Codex-revised version:
+
+- **Bet C (rally-SGP v2 with prefix-level role-aware features)**: 6.5h impl + train
+- **Bet B (V11 distillation with diversity gate)**: 3h
+- **Bet A (P5 causal Transformer, smoke-only commit)**: 6h smoke
+
+These are described in detail in the prior round's planning thread and remain
+applicable — the failure modes (parity leak, mimicry collapse) and gates are
+distribution-independent.
+
+---
+
+## Total compute estimate this round
+
+| Phase | Cost | Type |
+|---|---:|---|
+| 0 — active-test verification + doc sync | 15 min | manual |
+| 1 — rebuild aug parquet | 5 min | CPU (one-shot) |
+| 2 — retrain 5 components | 7–10 h | CPU + GPU (parallel) |
+| 3 — re-run zoo + materialise candidates | 15 min | CPU |
+| 4 — submit 3 candidates (LB external) | varies | none (manual upload) |
+| 5 — step-change bets (C / B / A) | 12–15 h | next session |
+
+**Phase 0–3 fits one 12 h compute day.** Phase 5 is its own session after Phase 4
+LB results land.
+
+---
+
+## Old TRAIN_PLAN content below (HISTORICAL — applied to OLD test/LB)
+
+
 
 This plan supersedes the 2026-05-04 round. **Current best is `zoo_v2` top-1 at LB
 0.3733788** (5-model: `v11+v11plus+v13+v14_seed0+v16_testhist_aug`, THR calibration).

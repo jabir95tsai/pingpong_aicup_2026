@@ -1,348 +1,483 @@
-# STRATEGY
-## Round: 2026-05-05 — zoo_v2 LB win + v16_avg3 LB regression
+# STRATEGY (v3 — 2026-05-10, post zoo_v11 round)
+
+> Live state: see `STATE_SUMMARY.md`. This file holds active strategy + plan.
+> Locked rules / hard rules: see `LESSONS_CHECKLIST.md` and
+> `COLLABORATION_WORKFLOW.md`.
 
 ---
 
-## Current State
+## 0. Context
 
-| Item | Value |
-|---|---|
-| **Current best submission** | `submission_zoo_v6_elig1_none_v11_aug_v11plus_v13_v14s2_v16.csv` |
-| **Current best Public LB** | **0.3748577** (2026-05-06) |
-| **Current best OOF (matched)** | 0.3794 (NONE calibration; reported eligible top-1 in zoo_v6) |
-| **Current best P11 holdout** | 0.3873 |
-| **Components** | `v11_aug + v11plus + v13 + v14_seed2 + v16_testhist_aug` (5-model global blend, **NONE calibration**) |
-| **Prior best (zoo_v2 top-1)** | LB 0.3733788 — was previous current best (THR edge) |
-| **Prior-prior best (zoo_v16_fast_01)** | LB 0.3694863 — fallback |
-| **Backup (single-family best)** | `submission_v16_testhist_aug_v11_optblend.csv` LB 0.3673269 |
-| **Old V14+V11 stable** | LB 0.3598509 — deep fallback |
-| Daily LB submission limit | 3/day (2026-05-05 used: 2/3) |
-| OOF→LB gap (current best, zoo_v2 5-model+v16) | −0.0095 |
-| OOF→LB gap (zoo_v3 6-model + **v16_avg3**) | **−0.0164** (REGRESSION; LB 0.3675453, see What Failed) |
-| OOF→LB gap (zoo_v16_fast_01 4-model) | −0.0105 |
-| OOF→LB gap (V16+V11) | −0.0070 (OOF underestimated LB) |
-| OOF→LB gap (V14+V11, clean) | −0.0155 (canonical baseline) |
-| OOF→LB gap (per-SN bucket zoo #4) | −0.0197 (overfit, REJECTED) |
+### 2026-05-24 UPDATE — R-067cr LB WIN: NEW LB-BEST 0.3870095
 
-Bottlenecks (ranked by leverage):
-- **pointId** F1 ≈ 0.235 — largest headroom; class 0 (off-grid) and short classes (1/2/3) carry most of the loss. Largely unchanged by zoo iteration; structural attack (P3 hierarchical point head) is the next lever.
-- **serverGetPoint** AUC ≈ 0.61 — rally-level label is structurally under-modelled (per-shot prediction is noisy).
-- **SN=2** slice OV ≈ 0.28 — early-rally; partly addressed by V16 test-history aug, do not chase further with hard SN gating.
-- **zoo search OOF→LB transfer fragility** — newly observed; large blends (n≥6) and grid-edge calibration both inflate OOF without LB benefit.
+- **NEW LB-BEST: 0.3870095 (R-067cr = R-042 + α=0.30 v22 server-head blend)**
+- R-067cr LB +0.000355 vs R-042 (0.3866550). Tiny but positive lift.
+- Path B server head transfer rate: 5.4% of OOF AUC delta. Structurally weaker
+  than action-head transfer (~100% for R-034 B-feature) but POSITIVE.
+- **5-fail streak broken**: first non-rule-override LB win since R-034 on 2026-05-21.
+- Net since R-034: **3 wins (R-034, R-042, R-067cr) / 6 losses**.
 
----
+### 2026-05-23 UPDATE — R-055 (−0.0141) and R-062r (−0.0057) both regressed; R-042 holds
 
-## Locked Rules (do not violate)
+- **NEW LB best (us)**: **0.3866550 (R-042 = R-034 PAIR + rule_override post-process)** — UNCHANGED.
+- R-055 (R-052 7-comp Bayes ADD + rule_override): LB **0.3725440** = −0.0141 vs R-042. B-impure ADD HARD-CONFIRMED toxic.
+- R-062r (v14_seed2_v16match_v2 LORO swap + rule_override): LB **0.3809371** = −0.0057 vs R-042. **B-player-style HARD-CONFIRMED toxic** (new class added to LESSONS_CHECKLIST 2026-05-23). v16match_v2 family banned despite Codex-approved design + +0.0037 OOF lift.
+- All v14+new-features SWAP candidates against R-034 (v15feat_c, v15feat_a+oldtest+avg3, testhist+v15feat_a, v16match_v2) have now either failed OOF or failed LB. R-034's v15feat_a swap was a SPECIFIC local maximum; the B-feature swap recipe on this slot is EXHAUSTED.
+- 2 wins / 5 losses on LB-tested experiments since R-027 PAIR. R-042 remains undefeated.
 
-1. **NEVER** use test.csv `serverGetPoint` as feature, target, or supervision. All training scripts overwrite it with −1; `build_test_history_pairs.py` discards real values before saving.
-2. **NEVER** include SGP-derived player win-rate features.
-3. **NEVER** include raw player-profile features (`player_action_freq`, `opp_action_freq`, per-player ID stats). V15 family is permanently rejected — non-transfer confirmed across two LB tests (gaps −0.022 and −0.026).
-4. **NEVER** include `hist_action_freq` / `hist_point_freq` / `streak_*` (V15 hist+streak group). Inert vs V14, no LB signal.
-5. **NEVER** use **hard per-SN-bucket gating** in blend weight search. zoo_v16_fast_04 proved this overfits OOF and loses −0.0098 on LB vs the global zoo.
-6. Validation: `GroupKFold(n_splits=5)` by **match** for any new training script. Test-history augmented rows never enter validation.
-7. Submission gate: a candidate may be submitted only if it has a credible path to beating the current best **0.3733788** — not merely beating an internal OOF threshold. Use multi-signal judgment (OOF + per-SN slice + OOF→LB gap of *structurally similar* prior submission), not OOF alone. The gap is NOT a fixed quantity — it grows with blend size and aggressive calibration (see Rules 8–9).
-8. **Blend-size cap**: `blend_zoo_v2.py` and successors must search subsets of size **≤ 5** unless a size-6 candidate has been LB-validated. zoo_v3 top-1 (n=6, OOF 0.3839) lost −0.0058 on LB vs zoo_v2 top-1 (n=5, OOF 0.3829) — one extra component near-doubled the OOF→LB gap.
-9. **Calibration grid edge guard** (REVISED 2026-05-06): THR-EDGE candidates STILL transferred to LB (zoo_v2 won), but **NONE-calibration candidates transfer BETTER** (zoo_v6 elig1 NONE, LB 0.3749 > zoo_v2 0.3734). Going forward: prefer NONE / TEMP / CW over THR-EDGE when both are available, especially if the NONE candidate has higher P11 holdout OV.
-10. **`v16_avg3` is provisionally suspect** as a zoo component until a controlled (size-≤5, temperature-interior) v16_avg3 blend beats its single-seed v16 counterpart on LB. Per-fold OV variance reduction (v16_avg3 OOF 0.3597 base ≈ +0.0014 vs v16) does NOT imply LB transfer — zoo_v3 top-1 with v16_avg3 lost −0.0058 LB.
-11. **NONE-calibration is LB-validated** (RESULTS §19/§20) BUT ONLY when paired with ≥ 2 Transformer-family components. Holdout-LB gap is calibration-arm-AND-subset-dependent: THR has LB > holdout (+0.007); NONE varies wildly (−0.012 with 2 transformers, −0.034 with 1 transformer). **P11 holdout magnitude is not a reliable LB-delta predictor for NONE candidates** — use directional ranking only, and only when subsets are structurally similar.
-12. **v11_aug is STRUCTURALLY CRITICAL** for NONE blends (RESULTS §20). Removing v11_aug from a winning NONE blend (zoo_v6 elig1 → zoo_holdout_top1) lost 0.020 LB. v11_aug is no longer "optional" — it is a required component for any NONE-calibration submission with v11plus.
-13. **NONE blends require ≥ 2 Transformer-family components** (any 2 of {v11, v11plus, v11_aug}). Single-Transformer NONE blends (e.g., v11plus alone + GBM mix) lose ≥ 0.018 LB. THR blends may differ — this rule is for NONE specifically.
+### Post-R-062r strategic verdict
 
----
+The realistic LB ceiling within the current paradigm is ≈ R-042 0.3866 (+ maybe +0.001 from a not-yet-found safe swap). Top-10 is 0.4445+; top-3 is 0.49+. The gap cannot be closed by more B-feature swap experiments.
 
-## What Worked
+Pending levers status (post-R-062r):
 
-| Direction | Evidence | Status |
+| Lever | Status | Decision |
 |---|---|---|
-| **V16 test-history augmentation** | LB +0.0075 vs V14+V11; OOF→LB gap shrank to −0.007 | Backbone — single-seed transfers reliably |
-| **Global 5-model zoo blend (zoo_v2)** | LB 0.3733788 (+0.00389 vs zoo_v16_fast_01); per-task independent weights, THR calibration | **Current best recipe**; cap at size ≤ 5 |
-| **V11 + V11plus together in zoo** | zoo_v2 top-1 includes both transformer variants | Use both as candidate slots in zoo menu |
-| **v13 (legacy) as diversity component** | All zoo_v2 top-5 included v13; current best uses it with weight 0.346 in action | Keep in component menu |
-| **Multi-seed V14 averaging (v14_avg3)** | Component-quality artifact; v14_seed0 won the zoo selection (not avg3) | Available, but v14_seed0 is the LB-validated representative |
+| R-064 v15feat_d spin features | Fold-1 smoke base dOV −0.0001, opt −0.0045, AUC −0.0063 (marginal) | PARK pending higher-confidence signal — recent LB pattern says SKIP 5-fold |
+| R-065c Consensus Pseudo V2c | Codex `BLOCK / ABANDON` (point pool 33 < 50 floor) | ABANDONED |
+| R-060r v14_recvprofile swap (no-oldtest) | Built; predicted 0.3830-0.3870; **same B-player-style risk class as R-062r** | DO NOT UPLOAD |
+| R-061r v14_recvhand swap (no-oldtest) | Built; predicted 0.3837-0.3877; **same B-player-style risk class as R-062r** | DO NOT UPLOAD |
+| Path B causal LM | Untested; only unmapped structural lever | NEEDS JABIR DECISION |
+| Re-examine teammate package_v8 (LB 0.4419) | Audited; rule_override extracted (R-042) | Possible final pass for unused levers |
 
-## What Failed (do not retry without new evidence)
+Re-confirmed taxonomy verdicts (see `LESSONS_CHECKLIST.md`):
+  - B-impure (v11_mulminet family, any incorporation) — TOXIC.
+  - B-meta (stacking ensembles, meta_stack v1/v2_logistic) — PRESUMED TOXIC.
+  - **B-player-style (per-player / per-match aggregates, incl. v16match_v2) — HARD-CONFIRMED TOXIC 2026-05-23.**
+  - Bayes/COBYLA weight refinement — DISABLED on any blend containing LB-untested components.
+  - 9-comp / 10-comp higher-order search — DISABLED until pool is filtered of v11_mulminet variants.
+  - Consensus pseudo-labelling — ABANDONED per R-065c stop gate.
 
-| Direction | Evidence | Status |
-|---|---|---|
-| **V15 player profile (any form)** | Two LB tests, OOF→LB gap −0.022 / −0.026 | PERMANENTLY REJECTED |
-| **V15 hist freq + streak** | OOF flat (−0.0013); LB −0.0024 vs V14 | PERMANENTLY REJECTED |
-| **Hard per-SN-bucket blend weights (zoo_v16_fast_04)** | OOF 0.37936 (≈ best), LB 0.3596738 (−0.0098 vs zoo #1) | REJECTED — non-transfer |
-| **6-model zoo blend with v16_avg3 (zoo_v3 top-1)** | OOF 0.3839 (+0.0010 vs zoo_v2 top-1), LB **0.3675453** (−0.0058 LB), gap −0.0164 (vs zoo_v2 −0.0095) | REJECTED — confounds blend-size growth and v16_avg3 swap; both factors implicated |
-| **THR temperature at grid edge (t=0.5)** | Both zoo_v2 and zoo_v3 top-1 hit t_a=t_p=0.5; zoo_v3 transferred badly | Treat as suspect (Rule 9); widen grid or pick interior-temperature alternate |
-| **CatBoost in final blend** | OOF +0.006, LB −0.001 | Excluded from all final candidates |
-| **V11+ class-weight + larger transformer** | OOF flat to negative | CLOSED |
-| **Plain hierarchical point head (V12 era, hard decode)** | F1_p 0.158 vs flat 0.210 | Use only as soft-decoded variant in P3 |
-| **Flat SN-bucket per-target weighting** | Inflates OOF, degrades LB | Avoid |
+Sections 1-9 below were written 2026-05-10 and reflect zoo_v10 LB 0.3694 era; many specific component recommendations are now stale. The CLASS taxonomy in `LESSONS_CHECKLIST.md` is the authoritative rule book post-R-062r.
 
----
+### Original 2026-05-10 baseline (kept for historical context)
 
-## Round Objective (2026-05-05 → next 1–2 days)
+- **NEW LB best (us)**: 0.3694391 (zoo_v10 elig2, 2026-05-10).
+- **NEW LB top**: 0.4459209.
+- **Gap**: −0.0765.
+- **Days remaining**: ~20.
+- **Submission slots**: 3/day = ~60 LB tries available.
+- **Compute**: GPU + CPU, ~12h-window cadence.
 
-**Primary:** Find a candidate that beats the current best **LB 0.3733788** without burning a submission slot on a low-confidence file. Same-menu zoo iteration is hitting diminishing returns (zoo_v3 with v16_avg3 regressed). Need either a structurally new component (P3) or a diagnostic that isolates the v16_avg3 transfer issue.
+The gap is huge. Our incremental wins this past 4 days have been
++0.0007 LB (R-004 v16_avg3 substitution). At that rate, even 60 LB tries
+won't close 0.076 — and many of our tries will be neutral or negative.
 
-**Secondary:** Diagnose the v16_avg3 vs blend-size confound. Either (a) a controlled re-run of `blend_zoo_v2.py` with size cap = 5 AND temperature grid extended to t≥0.3 (cheap, no training), or (b) a single LB probe of a 5-model v16_avg3 blend with an interior temperature.
-
-**Tertiary:** Add a structurally distinct component to the zoo menu. Hierarchical point head (P3, soft-decoded) is the highest-upside / lowest-risk option — orthogonal to V16 family, attacks the largest task bottleneck.
-
----
-
-## High-ROI Hypotheses (this round)
-
-### H1 (P1, COMPLETED) — Blend Zoo v2
-
-**Outcome (2026-05-05):** Top-1 (5-model: `v11+v11plus+v13+v14_seed0+v16_testhist_aug`, THR) OOF 0.3829 → **LB 0.3733788** (+0.0039 vs zoo_v16_fast_01). Current best.
-
-Lessons retained for successors:
-- 5 models was the sweet spot; size-6 candidates (zoo_v3) regressed on LB.
-- THR calibration won (no TEMP/CW variant cleared 0.378 OOF gate).
-- v13 (legacy) and v11plus (transformer variant) both contributed — keep in menu.
-- Random Dirichlet n=300 underperformed exhaustive grid alpha for n=4 case (ref subset OOF 0.3785 vs historical 0.37998); upside larger blend spaces compensate, but small n=3-4 subsets may benefit from a finer search.
-
-### H2 (P2, COMPLETED, REGRESSED) — V16 multi-seed ensemble
-
-**Outcome (2026-05-05):**
-- `v16_seed1` opt OV 0.3667 (vs v16 0.3677, −0.0010); `v16_seed2` opt OV 0.3674 (−0.0003). Per-seed variance very small (~0.001).
-- `v16_avg3` averaged base OV 0.3597 (+0.0014 vs single-seed v16 base 0.3583). Solo OV gate barely passed.
-- zoo_v3 with v16_avg3 swap: top-1 (n=6) OOF 0.3839 → **LB 0.3675453** (−0.0058 vs zoo_v2 top-1, gap −0.0164).
-
-Conclusion: V16 is **seed-insensitive** (per-seed OV variance ≪ 0.005). The averaging gain on OOF (+0.0014) is mostly noise; the LB regression is large. v16_avg3 transfer is suspect (Locked Rule #10) and the size-6 search overfit OOF (Locked Rule #8). H2 is closed for direct submission; v16_avg3 may still serve as a *component* in size-≤5 blends if a controlled probe confirms transfer.
-
-### H3 (P3, COMPLETED, FAILED) — Hierarchical point head (soft-decoded)
-
-**Outcome (2026-05-05, see RESULTS.md §12):** v18 full 5-fold ran with on-grid SUBSET
-training (Codex-approved) and soft product reconstruction. Both Codex gates failed:
-cls0 F1 −0.0172 vs V14 baseline (gate ≥ −0.01); short F1 (cls 1/2/3 mean) −0.0392 vs
-V14 (gate ≥ +0.03). Solo OOF opt OV 0.3595 vs V14 solo 0.3661 (−0.0066). v18 PARKED.
-Do NOT blend `v18_*.npy` into any zoo. Codex's deferred fallback `P(side|depth)` is the
-only structural rescue path; not scheduled for this round.
-
-Diagnosis: product-of-marginals (`p_valid × p_depth × p_side`) is too restrictive vs the
-flat 10-class joint head — depth and side are not independent given on-grid.
-
-### H4 (P4) — Rally-level Server head
-
-Core idea: SGP is rally-constant. Build a separate model that pools per-shot features into a single rally embedding (mean+max pool, plus rally-level meta features like rally length, score diff at end of rally history, last-shot action) and predicts SGP once per rally; broadcast to per-shot rows.
-
-Why it could beat current best: AUC=0.61 is suspiciously low for a label that does not vary within a rally. A direct +0.04 AUC gain = +0.008 score, plus this is a structurally orthogonal source of OOF signal for the zoo blend.
-
-Cost: low–medium; can be implemented as a small post-hoc module reading existing OOF features (no need to re-train action/point bases).
-
-Risk: the per-shot model may already implicitly use most of the rally context. Quick OOF check before committing engineering.
-
-Success signal:
-- OOF rally-AUC ≥ 0.65 in 1 fold.
-- When swapped into the zoo blend's server channel, OOF OV improves.
-
-Failure signal: rally-AUC ≤ 0.62 → existing per-shot pipeline already captures the signal. Park.
-
-### H5 (P5, deferred) — Autoregressive multi-task sequence model
-
-Core idea: Causal Transformer that predicts (action, point, sgp) at every position in the rally; pretrain LM-style on union of train+test rallies (using observable history only, no test SGP); fine-tune supervised on real train positions. Multi-task heads with rally-pooled SGP head.
-
-Why it might beat current best: 5–10× more supervised positions per rally; pretraining on test rallies generalises the V16 trick across all positions; structurally distinct from V11 so should add blend diversity.
-
-Cost: high engineering; full run ≈ 8–10 h. Therefore start with a 1-fold smoke (≤90 min, hidden=256, 6 layers).
-
-Risk: redundant with V11. Smoke must show ≥ V14 solo (≈ 0.36) AND non-trivial blend diversity vs V11 (Pearson correlation of OOF probs < 0.95).
-
-Success signal: smoke solo OOF ≥ V14 solo and OOF probs decorrelate from V11; commit to full run.
-
-Failure signal: smoke OOF in low 0.34s, or OOF probs ≈ V11 → abort.
+Closing the gap requires **structurally new directions**, not iteration on
+the v9-features × v11/v14/v16 paradigm we've exhausted.
 
 ---
 
-## H6–H12 Breakthrough hypotheses (from 2026-05-05 deep research memo + Codex review)
+## 1. What we've already exhausted (do NOT retry)
 
-### Component diversity ceiling — root-cause finding (NEW 2026-05-05)
+Locked from last 5+ days of experiments:
 
-Pairwise Pearson correlation of OOF point predictions (full matrix in RESULTS.md §12):
-- v16_avg3 ↔ v16_testhist_aug = **0.994** (averaging across V16 seeds added near-zero diversity)
-- v14_seed0/1/2 pairwise = 0.977; v14_avg3 ↔ each seed = 0.992
-- v14 ↔ v12_5f = 0.95
-- Cross-cluster GBM ↔ Transformer = 0.65–0.78
-- v11 ↔ v11plus = 0.83
+| Direction | Outcome | LB delta | Locked |
+|---|---|---:|---|
+| Larger transformers (v11_big, v11_aug_big) | Underfit / overfit | 0 (parked) | YES |
+| Smaller transformer (v11_small) | Below default v11 | 0 (parked at gate) | YES |
+| Multi-seed v14 averaging (v14_avg3) | Hurts LB | −0.0013 | YES |
+| Multi-seed v16 averaging (v16_avg3) | **Helps LB** | **+0.0007** | **VALIDATED** |
+| Single-seed v16 substitution (v16_seed1) | Hurts LB | −0.0023 | YES |
+| LightGBM stacking meta-learner | Underfits, no signal | 0 | YES |
+| Logistic stacking meta-learner | Underfits, no signal | 0 | YES |
+| Rally-level prefix-only server head v1 | WEAK_STOP gate | 0 | YES |
+| Rally-level prefix-only server head v2 (+ lag) | WEAK_STOP gate | 0 | YES |
+| Per-SN bucket blend weights | OOF→LB regression | (old test) | YES |
+| Hard hierarchical point head | Both gates failed | (old test) | YES |
+| 3+ transformers in NONE blend (no v13) | Major regression | −0.0043 | YES |
+| Player-profile / V15 family | Non-transfer | (old test) | YES |
+| n_shots / parity / rally-length features | SGP leak | (old test) | YES |
 
-**Implication.** The zoo's "9-component" menu is effectively **2 clusters** (GBM and Transformer)
-with strong intra-cluster correlation. Dirichlet random search exploits OOF noise differences
-between near-identical components — explains the OOF→LB gap variability (zoo_v2 −0.0095 vs
-zoo_v3 −0.0164). **Future LB lift requires adding a genuinely uncorrelated component** (target
-cross-cluster correlation ≤ 0.78), NOT more same-architecture seeds.
-
-### H6 (NEW) — V11 + test-history augmentation (HIGHEST priority next)
-
-Plumb `data/test_history_pairs.parquet` (2,353 pairs) into V11's training data so the
-Transformer learns the same test-distribution shifts that V16 caught on the GBM side.
-
-Why: V16 → V14 LB delta was +0.0075 from this exact mechanism on GBM. V11 is the most
-uncorrelated component (0.65–0.78 cross-cluster). Combining the two should produce real
-diversity gain without LB-transfer risk.
-
-**Codex sign-off (2026-05-05): 1-fold smoke APPROVED, with HARD implementation constraint.**
-`data/test_history_pairs.parquet` carries `serverGetPoint = -1` placeholders. Current
-`src/train_v11_transformer.py` server head computes BCE over ALL samples; feeding aug rows
-in unchanged would treat −1 as a label and poison the SGP head. Required fix: **mask the
-server loss for aug rows** (implementation choice: zero sample weight on aug rows for the
-server head, OR compute server BCE only over `is_aug == 0` rows). Action and point losses
-on aug rows are fine.
-
-Smoke gate: 1-fold solo action F1 not regressed vs V11 baseline; no NaN/Inf; verified
-server BCE excludes aug rows.
-Full gate: solo action F1 ≥ V11 + 0.005 AND OOF correlation v11_aug ↔ v16 ≤ 0.78 (no worse
-than current v11 cross-cluster correlation).
-
-### H7 (NEW) — GBM/zoo soft-label distillation into V11
-
-Train V11 with auxiliary KL loss using zoo_v2 top-1 OOF probabilities as soft labels.
-Compresses ensemble knowledge into the most-uncorrelated component.
-
-Risk: collapses to teacher mimicry → loses V11 orthogonal signal. Mitigate by capping α ≤ 0.5
-and gating on cross-correlation gate (distilled v11 ↔ zoo_v2 OOF ≤ 0.95).
-
-Schedule: after H6 outcome, reuses same training infrastructure.
-
-### H8 (NEW) — Pseudo-labelled test rallies (POLICY-GATED, NOT submission-approved yet)
-
-Use zoo_v2 top-1's high-confidence test predictions (action prob > 0.6, point prob > 0.4)
-as pseudo-labels; append to V14/V16 training set. ~1,000 rows expected after gating.
-
-**Codex sign-off (2026-05-05): NOT approved for submission training.** Distinct from V16
-test-history augmentation — those rows are organiser-confirmed observable shots
-(history_visible). Pseudo-labels are model-generated test targets and walk close to the
-"no manual correction of test outputs" rule. Offline label generation and design exploration
-acceptable. Any pseudo-label-trained submission requires explicit Jabir policy approval
-BEFORE training begins. Treat as a parked direction until that approval lands.
-
-### H9 (NEW) — Geometry-aware pointId loss (label-smoothing on 3×3 grid)
-
-Distance-weighted soft labels: each true on-grid label distributes ε mass to its 4 spatial
-neighbours. Direct attack on FH_short / mid_short / BH_short failures.
-
-**Codex sign-off (2026-05-05): difficulty under-estimated.** GBM multiclass cannot trivially
-absorb soft labels — implementation requires either (a) sample expansion (one shot becomes
-multiple weighted (X, neighbour-class) rows) or (b) a custom loss / objective hook. Plan
-cost rises from "low" to "medium". Safer than v18 hier because the joint head is preserved.
-
-### H10 (NEW) — Rally-pooled SGP head (was P4 in TRAIN_PLAN.md)
-
-SGP is rally-constant; predict once per rally and broadcast. Pool features across observable
-shots (mean/max/last) plus rally-level meta. Targets the AUC=0.61 ceiling.
-
-Cost: low. Smoke: 1-fold ≤ 30 min, gate rally-AUC ≥ 0.65. Orthogonal to point/action so does
-not interfere with H6/H7.
-
-### H11 (NEW) — Player-disjoint holdout (validation diagnostic)
-
-Build a held-out fold whose primary players don't appear in training. Compute "player-disjoint
-OOF" alongside standard match-OOF. Use the gap to predict LB transfer.
-
-**Codex sign-off (2026-05-05): APPROVED to prioritise BUT initially advisory only.** With
-≤ 5 LB-tested points (V12+V11, V14+V11, V16+V11, zoo_v16_fast_01, zoo_v2, zoo_v3), Pearson
-> 0.85 is dominated by single points and submissions are not independent. Initial gate:
-leave-one-out / rank-consistency check — does the holdout correctly predict why zoo_v2 won
-and zoo_v3 / per-SN bucket / V15 lost? Hard gate only after that lands.
-
-### H12 (NEW) — Anchor-perturbation zoo search
-
-Restrict the search to weight perturbations from zoo_v2 top-1 (the LB-tested winner)
-instead of fresh Dirichlet. Search space drastically narrower; OOF overfit risk drops.
-
-Cost: ~30 min impl + ~50 min CPU. Smoke: top-1 OOF ≥ zoo_v2 + 0.001 AND drift < 0.2 from
-anchor. Submission only after H6 / H10 produce a new component to perturb the menu with.
-
-### Other ideas considered (deferred)
-
-- Causal Transformer with LM pretraining on train+test (was P5; high cost ~10h, not in
-  remaining 8h budget).
-- Soft mixture-of-experts on strikeNumber (close to STRATEGY rule 5 boundary; needs Codex
-  sign-off on the soft-vs-hard distinction).
-- Contrastive rally embeddings without raw player IDs (large engineering, deferred).
-- Flip-TTA at inference: difficulty under-estimated by Codex — must rebuild flipped raw
-  context features and flip action/point posteriors back, not just relabel submission
-  outputs. Plan cost rises from "trivial" to "low-medium".
-- Rule-based posterior projection (action grammar): cheap, tried via apply_action_rules
-  already; minor expected lift.
+Per `LESSONS_CHECKLIST.md`, none of these revive without explicit Codex re-review.
 
 ---
 
-## Priority Order This Round (revised 2026-05-05 post-deep-memo + Codex review)
+## 2. The honest LB ceiling for our current paradigm
 
-| Priority | Hypothesis | Status | Risk | Cost | Ceiling |
-|---|---|---|---|---|---|
-| **P0** | Hold current best 0.3733788; protect submission slots | active | — | none | — |
-| **P1** | Blend Zoo v2 (5-model + THR) | ✅ COMPLETED, LB 0.3733788 | — | done | — |
-| **P2** | V16 multi-seed (`v16_avg3`) → re-run zoo blend | ❌ COMPLETED, LB regressed | — | done | closed |
-| **P1.5** | Diagnostic re-run with size cap = 5 + temp ≥ 0.3 (zoo_v4a) | ✅ COMPLETED; eligible top-1 OOF 0.3771 < gate; slot-3 SKIPPED | — | done | closed |
-| **P3** | Hierarchical point head (soft-decoded), `train_v18_hier_point.py` | ❌ COMPLETED, gates failed (cls0 −0.0172, short −0.0392); v18 PARKED | — | done | closed |
-| **P6** (NEW) | **V11 + test-history augmentation** (H6) | ✅ COMPLETED 2026-05-06; v11_aug solo OV 0.3247. zoo_v6 elig1 NONE with v11_aug → **LB 0.3748577 NEW CURRENT BEST** (RESULTS §19). Prior parking decision REVERSED — v11_aug helps when NONE-calibrated. | done | done | NEW BEST |
-| **P10** (NEW) | Rally-pooled SGP head (H10, was P4) | ❌ COMPLETED 2026-05-06; AUC=0.998 leaked via n_shots parity (table-tennis alternation rule). PARKED — see RESULTS §15 | done | done | closed |
-| **P11** (NEW) | Player-disjoint holdout (H11, validation diagnostic) | ✅ COMPLETED 2026-05-06; rank-consistency holds at zoo level (zoo_v2 > zoo_v3); flagged zoo_v6 candidates as likely regressions. Advisory signal. | done | done | retained for future submissions |
-| **P12** (NEW) | Anchor-perturbation zoo search (H12) | ❌ COMPLETED 2026-05-06 (zoo_v7, zoo_v7b); anchor at local OOF optimum, perturbation cannot improve. PARKED — see RESULTS §16 | done | done | closed |
-| **P7** (NEW) | GBM/zoo soft-label distillation into V11 (H7) | not started; pending H6 outcome | medium | ~2 h training | depends on H6 |
-| **P9** (NEW) | Geometry-aware point loss (H9) | not started; Codex flagged difficulty under-estimated | medium (was low) | ~1–2 h impl + 80 min training | +0.005 point F1 if smoothing works |
-| **P8** (PARKED) | Pseudo-labelled test rallies (H8) | NOT approved for submission; offline design only | high (rule risk) | varies | requires explicit Jabir policy approval before any submission training |
-| **P5** | Autoregressive sequence model (smoke first) | deferred (cost > remaining budget) | high | 1.5 h smoke / 8–10 h full | step change to 0.38+ if it works |
+Best blend OOF: 0.3775. OOF→LB ratio for safe substitutions: 0.978.
+Implied LB ceiling **from our current paradigm**: ~0.3692. We're already
+at it (0.3694).
+
+No incremental tweak inside this paradigm will give a breakthrough. All
+the "+0.001 OOF" improvements we might find translate to ~+0.001 LB and
+will not close 0.076.
 
 ---
 
-## Submission Hypothesis (next slot, revised 2026-05-05)
+## 3. Three structural paths (this is the plan)
 
-The next submission slot must clear the bar `LB > 0.3733788`. Eligible candidates, ranked:
+### Path A — Test-set pseudo-labeling (HIGHEST EV, T3, requires Jabir approval)
 
-1. **H6 v11_aug zoo top-1** — after `v11_aug` (V11 + test-history aug, server-mask) passes
-   smoke + full gates, swap into zoo as the v11 slot and re-run `blend_zoo_v2.py
-   --max-models 5`. Expected first viable submission for slot 1 of 2026-05-06. Required:
-   v11_aug solo gates pass, OOF correlation v11_aug ↔ v16 ≤ 0.78, zoo top-1 OOF ≥ zoo_v2
-   top-1 OOF, edge-rejection passes.
-2. **H10 rally-SGP-augmented zoo top-1** — after rally-SGP head passes its 1-fold smoke
-   (rally-AUC ≥ 0.65) and full 5-fold (rally-AUC ≥ 0.62), swap into the SGP channel of the
-   zoo blend; OOF must improve.
-3. **H12 anchor-perturbation zoo top-1** — only viable AFTER H6 or H10 produces a new
-   component to perturb the zoo menu with. Cheap top-up, not a standalone breakthrough.
+**Hypothesis**: top teams (LB 0.40+) almost certainly use some form of
+pseudo-labeling or self-training on the test set. We have not tried this.
 
-**Today's slot 3 (2026-05-05): SKIP** (P1.5 Run A failed gate; v18 failed gates;
-no eligible candidate). Preserve for 2026-05-06 if any 2026-05-05 work lands new
-artifacts.
+**Codex P1 fix (2026-05-10)**: V1 must NOT pseudo-label `serverGetPoint`.
+Our server AUC is only ~0.61 — SGP pseudo-labels would amplify errors at
+high rate. V1 covers `actionId` + `pointId` only; SGP rows are masked out
+of the server BCE loss exactly as the test-history aug rows are. SGP
+pseudo-labeling is a separate V1b experiment (after V1 result is known).
 
-**Codex submission discipline (2026-05-05)**: P1.5 Run B is OOF-only diagnostic; its
-output **does NOT** rehabilitate v16_avg3 for direct submission. v16_avg3 may only
-re-enter the candidate pool after a separately LB-tested controlled probe.
+**Design (V1, action + point only)** — to be detailed in R-009 preflight:
+1. Source file: predict `actionId` + `pointId` per test rally using current
+   best blend (zoo_v10 elig2, OOF 0.3771). Save to `data/pseudo_v1.parquet`
+   with explicit columns: `rally_uid`, `next_strikeNumber`,
+   `pseudo_actionId`, `pseudo_pointId`, `act_top1_p`, `pt_top1_p`,
+   `pt_is_cls0`, `is_pseudo=1`, `serverGetPoint=-1` (sentinel).
+2. Filter to high-confidence test rows:
+   - `act_top1_p > 0.5` (action confidence)
+   - `pt_top1_p > 0.5` (point confidence) AND `pt_is_cls0 == 0` (drop
+     pseudo-cls0 rows; they're "off-grid / unobserved" and would noise
+     the BH/FH per-class learning)
+   - Row cap: max 1500 pseudo rows (reduces bias amplification surface)
+3. Sample weight `w_pseudo = 0.3` for pseudo rows; `w_real = 1.0` for
+   train rows.
+4. Retrain `v14_pseudo_v1` with `--feature-set v9` (no recvhand yet — keep
+   single-variable). All original v9 features + pseudo rows. SGP loss
+   masked exactly like P6 test-history-aug pattern: `is_pseudo == 1` rows
+   excluded from server BCE.
+5. Naming convention: `oof_predictions/v14_pseudo_v1_*.npy`,
+   `submissions/submission_v14_pseudo_v1.csv`. NO `_pseudo_` infix in zoo
+   menu / blender — keep blender unchanged in V1.
+6. Compare per-fold OOF + per-class delta vs v14_seed2 baseline.
+
+**Expected lift (action + point only)**: +0.003 to +0.012 LB if pseudo
+labels are net-correct on action/point. Smaller than my prior estimate
+(which assumed SGP was included).
+
+**Risk**:
+- Bias-amplification on the action/point space (still real even without SGP).
+- LB→OOF gap may widen or invert.
+- Hard rule §4: "Pseudo-label runs that train on predicted test labels
+  require explicit Jabir approval." → T3 gate.
+
+**Required approvals BEFORE training**:
+- Jabir explicit T3 approval ("Open R-009 preflight for pseudo-labeling V1
+  design.")
+- R-009 preflight in REVIEW_QUEUE.md with the exact spec (source file,
+  thresholds, sample weights, row cap, cls0 exclusion, SGP masking,
+  artifact naming) — Codex APPROVE_WITH_FIXES or APPROVE.
+- Jabir's decision on LB upload (Codex `ARTIFACT_OK` requirement REMOVED 2026-05-22).
+
+**Cost**: ~3-4h CPU per training run. Could iterate 4-5 versions in 20 days.
+
+### Path B — Causal autoregressive rally LM with multi-position objective (HIGH dev)
+
+**Codex P2 fix (2026-05-10)**: a "small transformer encoder" is structurally
+the same family as v11/v11_small/v11_big — we've shown this family doesn't
+break out. Path B must be **structurally different**: a causal /
+autoregressive sequence model with a multi-position objective, not just
+another encoder.
+
+**Hypothesis**: predict shot N from a learned representation of shots 1..N-1
+where the model is trained to predict EVERY position (not just the last).
+This is autoregressive language-model-style training over the rally
+sequence. Test-rally visible action/point can also serve as additional
+LM-pretraining data (no SGP needed).
+
+**Design**:
+- Input: full rally history as a token sequence. Each shot is a token
+  with categorical embeddings (actionId × handId × spinId × strengthId ×
+  pointId × positionId). Concatenate per-shot embeddings.
+- Architecture: causal Transformer decoder, d=192, 4 layers, 4 heads
+  (matches v11's capacity to control for hyperparameter confound).
+- Objective: predict EACH shot in the rally given prefix. Per-position
+  cross-entropy on action + point. Server head only on the predict-the-
+  next-shot row, masked exactly per P6 (is_aug rows + is_train rows
+  contribute to action/point loss but not to server BCE unless the row
+  has a real SGP label).
+- LM pre-training: visible test action+point shots can be used as
+  additional autoregressive training data (no SGP). This lets the model
+  learn rally-language structure from BOTH train + test, similar to the
+  P6 test-history aug but at every position not just last.
+- Train: GroupKFold(5) by match. Server BCE strictly masked.
+
+**Stop gates (Codex P2 requirements)**:
+- 1-fold smoke first (~1h GPU). Must report:
+  - Fold 1 OV vs v11 baseline (must be >= v11 - 0.005 to continue)
+  - Per-task F1_a / F1_p / AUC
+  - OOF correlation with v11 and v14_seed2 (target: < 0.85 to be a
+    diverse zoo addition; > 0.95 means redundant)
+  - Whether the candidate would be eligible for the zoo blender at all
+- If smoke passes, run full 5-fold (~5-6h GPU).
+- If smoke fails: PARK as inert, no zoo intake.
+
+**Expected lift**: +0.003 to +0.015 LB if it produces a diverse component
+that augments the existing zoo. Lower bound is "expensive diversity-only
+addition that doesn't beat v11 standalone".
+
+**Risk**:
+- Implementation cost: ~3-4 days dev work for the causal LM head + per-
+  position loss + LM pre-training pipeline.
+- Could still replicate v11's behavior if the data signal saturates at the
+  v11 level (then it's just diversity).
+
+**Cost**: ~1h GPU smoke + ~5-6h GPU per full training run. Iterate 2-3
+versions over a week.
+
+### Path C — New feature engineering (incremental but reliable)
+
+**Hypothesis**: features_v9 has been our backbone. Adding genuinely
+orthogonal feature classes could decorrelate from existing v14 family.
+
+**Codex P2 fix (2026-05-10)**: cross-rally / cross-match priors are
+DANGEROUS. The organizers explicitly noted that `rally_uid` ordering is
+randomized in test — we cannot use rally order to infer match progression.
+Any per-match prior using "what player did in prior rallies" requires
+proof that the rally history is legally observable in test, otherwise
+T2 review before implementation.
+
+**Safe candidate feature classes (designed for in-rally / single-shot
+features only)**:
+1. **Prefix-in-rally aggregates** (always safe): features_v9 patterns
+   computed over prefix shots of CURRENT rally only. Already similar
+   to recvhand. Add new aggregates: e.g. mode of receiver's `pointId`
+   over prefix, server's mean `strengthId` over prefix.
+2. **Score-conditional features** within current rally (safe): score
+   delta at shot N, score parity, score-sum thresholds — using only
+   the current row's `scoreSelf` / `scoreOther`.
+3. **Receiver-hand × shot-type interactions**: extension of
+   `recv_hand_est` to per-shot interaction features (e.g. recv_hand × N-1
+   actionId, recv_hand × N-1 strengthId). Same prefix-only safety as
+   v14_recvhand.
+4. **PositionId × actionId interaction**: positional play patterns
+   (current row's `positionId` and prior-shot `actionId`). Single-row
+   lookup, no cross-rally / cross-match.
+
+**Banned without explicit Codex T2 review** (Codex P2):
+- Cross-rally aggregates (would assume rally order is observable)
+- Cross-match priors (per-player aggregates across matches)
+- Anything that uses test rally ordering as a feature
+
+**Expected lift per new feature class**: +0.0003 to +0.003 LB.
+
+**Risk**: low (for the safe classes above). Each is a small additive
+improvement, well-understood methodology. But cumulative gain is bounded
+by the paradigm ceiling (~0.005 max).
+
+**Cost**: ~1-2h dev + 3h CPU per new feature class.
+
+### Path D — External / different architectures (LONG-shot, T3, last resort)
+
+**Hypothesis**: top teams may use approaches outside our toolkit.
+Candidates:
+- Graph neural network (rally as a graph)
+- Reinforcement-learning-style sequence prediction
+- Pre-trained large model fine-tuning (if competition rules allow)
+
+**Status**: Not pursuing in next 20 days unless Paths A/B/C all stall.
+Implementation cost too high to fit timeline.
 
 ---
 
-## Forbidden / Deferred
+## 4. Recommended priority for next 20 days
 
-- Hard per-SN-bucket weight conditioning (zoo_v16_fast_04 failure).
-- All V15 / player-profile / hist-freq / streak features.
-- CatBoost in final blends.
-- Plain V11+ class-weight escalation.
-- Hard-decoded hierarchical point heads.
-- Any feature derived from test.csv `serverGetPoint`.
-- **Blends of size ≥ 6** without LB validation (Locked Rule 8).
-- **THR candidates with edge-grid temperature** (t = lower bound) without re-running with a wider grid (Locked Rule 9).
-- **`v16_avg3` as a zoo component in the next submission** unless a controlled probe (size ≤ 5, interior temperature) confirms LB transfer (Locked Rule 10).
-- Submitting the next-slot candidate before Codex reviews this STRATEGY.md and TRAIN_PLAN.md.
+Day-by-day budget:
 
----
+| Phase | Days | Path | Goal |
+|---|---|---|---|
+| Phase 1 | 1–3 | **Path A pseudo-labeling V1** (assuming Jabir approves T3) | Establish whether pseudo-labeling lifts LB at all. Single iteration: predict labels with current best, filter at conf>0.6, retrain v14_pseudo, evaluate. |
+| Phase 2 | 4–7 | **Path B sequence transformer V1** (parallel on GPU) | Build minimum-viable rally-sequence model. Even if it just matches v11, it's a structurally different blend component. |
+| Phase 3 | 8–12 | Path A iteration: refine confidence threshold, add multi-task loss interactions | If V1 lifted LB, iterate. If V1 regressed, fall back to Path C. |
+| Phase 4 | 13–16 | Path C: 2–3 new feature classes added to v14_pseudo / v14 base | Top up with incremental gains. |
+| Phase 5 | 17–20 | Final blend search + ensemble of best-of-each path + LB optimization | Use remaining slots to find optimal ensemble. |
 
-## Open Questions for Codex
+LB-target (realistic):
+- Phase 1 outcome: 0.370–0.385
+- Phase 2 outcome: +0.000 to +0.005 incremental
+- Phase 3-5 outcome: +0.005 to +0.015 cumulative
 
-1. **OOF→LB gap modeling for size-N blends**: zoo_v2 (n=5) had gap −0.0095; zoo_v3 (n=6, with v16_avg3) had gap −0.0164. Is the gap growth attributable to (a) blend-size alone, (b) v16_avg3 alone, or (c) both compounding? A controlled P1.5 re-run (n≤5, with v16_avg3 in menu) should disambiguate. What additional features should the spread-penalised score include to catch this — e.g., a size penalty `−0.001 × (n_models − 4)`?
-2. **Temperature grid bound**: both LB-tested top-1s hit t=0.5 (lower edge). Should the grid be widened (down to 0.3 or 0.2) AND should we add a "no edge" filter that rejects candidates where the chosen t lies on the grid boundary?
-3. **`--seed` plumbing audit**: I patched `train_v16_testhist_aug.py` (9 model-init sites + `np.random.seed(seed)`); flip-aug is deterministic, GroupKFold is deterministic. Did I miss a path? Was the v16_avg3 LB regression caused by a subtle seed-handling bug on my part, or by genuine v16_avg3 transfer failure?
-4. **Hierarchical point reconstruction (P3)**: code skeleton in TRAIN_PLAN.md §P3 uses on-grid SUBSET for depth/side heads (per the prior Codex revision). Confirm sign-off before I write `train_v18_hier_point.py`.
+End-of-window LB target: **0.380–0.400**. Closes ~half the gap. Not rank-1
+but a major jump.
 
 ---
 
-## Carried Anchors
+## 5. Decision gates (when to pivot)
 
-- V14 5-fold no-CB OOF: action 0.3793 / point 0.2162 / AUC 0.6101 / **OV 0.3602 base, 0.3754 +V11**
-- V14 solo opt OV (post threshold-opt, before V11): 0.3661
-- V16 testhist aug solo opt OV: 0.3677; +V11 OOF 0.3743; **LB 0.3673269**
-- zoo_v16_fast_01 OOF 0.37998; **LB 0.3694863** (gap −0.0105)
-- **zoo_v2 top-1** (n=5: v11+v11plus+v13+v14_seed0+v16) OOF 0.3829, F1_a 0.4145, F1_p 0.2362, AUC 0.6132, spread 0.0924, t_a=t_p=0.5; **LB 0.3733788** (gap −0.0095) — CURRENT BEST
-- **zoo_v3 top-1** (n=6: v11+v11plus+v12_5f+v13+v14_seed0+v16_avg3) OOF 0.3839, F1_a 0.4172, F1_p 0.2349, AUC 0.6150, spread 0.0913, t_a=t_p=0.5; **LB 0.3675453** (gap −0.0164) — REGRESSION
-- v16_seed1 (seed 48879) opt OV 0.3667; v16_seed2 (51966) opt OV 0.3674; v16_avg3 averaged base OV 0.3597
-- V14_avg3 solo OOF 0.3623; +V11 OOF 0.3765
-- SN=2 slice (V14+V11): n=14995, F1_a=0.243, F1_p=0.161, AUC=0.539, OV=0.270
-- SN buckets (zoo_v2 top-1): SN=2 0.279 / SN=3-4 0.357 / SN=5-8 0.371 / SN=9-12 0.353 / SN≥13 0.341
-- **zoo_v4a (P1.5 Run A, 2026-05-05, size≤5, temp≥0.3)**: 198/396 entries eligible (50% rejected as edge). Global top-5 by spread_penalised_score are ALL THR with t_a=t_p=0.3 (hit the new lower edge — THR fundamentally wants sharper temperatures). Eligible top-1 = NONE calibration, OOF 0.3771 (well below zoo_v2 top-1 0.3829). Slot-3 gate FAILED — submission skipped; current best preserved at LB 0.3733788. Implication: lowering the temp grid alone cannot rehabilitate edge candidates without LB validation, since the optimum sits past the lower bound.
+After each 3-day phase, evaluate:
+- LB lift achieved
+- Compute used vs remaining budget
+- Paradigm health (is the path still producing wins?)
+
+Pivot rules:
+- If Path A V1 LB regression > −0.005: park Path A entirely, double down on
+  Paths B+C.
+- If Path B doesn't beat v11 in a 3-day window: park as diversity-only
+  component, focus on Paths A+C.
+- If we're still at LB 0.370 by Day 10: emergency pivot to Path D
+  exploration.
+
+---
+
+## 6. Submission slot policy (TIGHTER than before, Codex P2 update)
+
+Past 4 days we've used ~12 slots for ~+0.0007 cumulative LB. Per slot
+cost-benefit: must require predicted LB lift > +0.002 (with confidence)
+to spend a slot.
+
+**Diagnostic-slot exception (Codex P2 narrowed)**: ONLY the following
+can use a slot below the +0.002 predicted-lift bar:
+- A NEW structural component (Path A pseudo-label V1, Path B sequence LM,
+  a new feature class first LB validation)
+- A Codex-approved structural change (e.g. R-004 v16_avg3 substitution
+  was Codex-vetted)
+
+**NOT eligible for diagnostic-slot exception** (zoo_v11 elig1 lesson,
+LB −0.0043 cost):
+- Seed-variant substitutions (single-seed swaps)
+- Average vs. single-seed substitutions (we already validated v16_avg3
+  helps, v14_avg3 hurts — no further "single-variable" probes on this axis)
+- Zoo-search blend-structure variations (changing transformer count,
+  dropping v13, adding v11, etc. — all in the same paradigm)
+
+For non-exception submissions: predicted LB lift > +0.002 with reasonable
+confidence is required. Hold the slot otherwise.
+
+---
+
+## 7. What requires Jabir approval before this plan starts
+
+1. **Path A T3 approval**: explicit "go ahead with pseudo-labeling design,
+   you may open R-### preflight."
+2. **Path B compute commitment**: ~30h GPU over 4-7 days. Confirm OK.
+3. **Workflow updates** (see workflow re-examination memo in next section):
+   tighter T3 gate, diagnostic-budget cap, stop-gate tightening.
+
+---
+
+## 8. Component menu freeze for the next round (Codex P3 — HARDENED)
+
+Per current LB findings — these are now LOCKED rules for any submission
+candidate, not just zoo defaults:
+
+### Submission-candidate rules (any NONE blend bound for LB)
+- **MUST contain v13** — empirical (R-008 zoo_v11 elig1 dropped v13 → −0.0043 LB).
+- **MUST cap transformers at 2 of {v11, v11plus, v11_aug}** — empirical
+  (R-008 added 3rd transformer + dropped v13 → −0.0043 LB combined).
+- **v16_avg3 is the primary v16 component** — LB-validated (R-004 +0.0007 vs
+  v16_testhist_aug).
+- **v16_testhist_aug is backup only** — used in current LB-best (zoo_v8 elig3
+  pre-R-004) but superseded by v16_avg3.
+- **v14_seed2 is the canonical v14** — v14_avg3 hurt LB (R-007 −0.0013).
+  v14_seed0 / v14_seed1 also redundant per T1 correlations.
+
+### Eligible components for ANY submission candidate
+- v13 (REQUIRED in NONE)
+- v14_seed2
+- v16_avg3 (primary) OR v16_testhist_aug (backup)
+- Choose ≤ 2 of {v11_aug, v11plus, v11} (v11_aug + v11plus is current best
+  pair)
+- v12_5f (optional)
+- v14_recvhand (optional, small diversity)
+
+### Banned from submission-candidate consideration
+- v14_avg3 (hurts LB)
+- v14_seed0, v14_seed1 (redundant + not LB-validated)
+- v16_seed1 (single-seed worse than v16_avg3 average)
+- v16_seed2 (same)
+- v11_big, v11_aug_big, v11plus_aug (underperformed)
+- meta_stack v1, meta_stack v2_logistic (**HARD-PARKED 2026-05-23 after R-055
+  −0.0141 LB; B-meta class presumed toxic by association**)
+- server_head_v1, server_head_v2 (PARKED)
+- **v11_mulminet entire family** (single-seed, avg2, avg3, oldtest, no-oldtest,
+  all variants — HARD-PARKED 2026-05-23 after 3 LB datapoints: R-028 −0.0086,
+  R-040 −0.0094, R-055 −0.0141. B-impure architecture-swap does not transfer
+  to LB regardless of incorporation method)
+- **R-052/R-053/R-054 blend designs** (all share v11_mulminet_aug_avg3 +
+  meta_stack_v2_logistic; toxic by composition)
+- **Bayes/COBYLA weight refinement on blends with LB-untested components**
+  (R-055 lesson: weight search amplifies toxic components into LB cliffs)
+
+### Future blender (zoo_v12+)
+Future zoo runs use the eligible menu above. Adding v14_pseudo_v1 (Path A)
+or sequence_lm_v1 (Path B) requires explicit Codex review of how they
+slot into the GROUP_A/B/D/E + new GROUP_PSEUDO / GROUP_LM rules per
+COLLABORATION_WORKFLOW.md §6.
+
+---
+
+## 9. Path B design draft (NOT implementing yet — Jabir not yet approved)
+
+Per Jabir 2026-05-10: Path B design / smoke plan only; no implementation
+or training without Path A blocked OR explicit Path B approval.
+
+### 9.1 Architecture sketch
+
+- Token = one shot in a rally. Token embedding is the concatenation of
+  learnable categorical embeddings: `actionId` (15 bins, 15-dim each),
+  `pointId` (10 bins, 10-dim each), `handId` (3 bins, 8-dim each),
+  `spinId` (6 bins, 8-dim each), `strengthId` (4 bins, 8-dim each),
+  `positionId` (4 bins, 8-dim each), `numberGame` (small lookup),
+  `sex` (2 bins, 4-dim each), `strikeNumber` positional (sinusoidal,
+  d=192). Total token dim ≈ 192 after a learned linear projection.
+- Encoder: causal Transformer decoder, d=192, 4 layers, 4 heads,
+  feed-forward dim 768, dropout 0.1.
+- Output heads: action (15-class) + point (10-class) + server (binary).
+- Causal mask: position `t` can attend to `1..t` only.
+
+### 9.2 Multi-position objective (the Codex P2 differentiator)
+
+For each rally with shots `1..N`, the model is trained to predict EVERY
+position from its causal prefix:
+
+```
+loss = sum over t in 2..N of:
+   alpha * CE(action_pred_t, action_t)
+ + beta  * CE(point_pred_t,  point_t)
+ + gamma * BCE(server_pred_t, server_t)         # only if server_t is real
+```
+
+`alpha`, `beta`, `gamma` follow the competition score weighting (0.4, 0.4, 0.2).
+Server BCE is masked at any position where server_t is `-1` (test-history
+aug rows) or where pseudo-labeling masking applies — same convention as
+P6.
+
+This is fundamentally different from v11/v14/v16 (which predict only the
+LAST shot from prefix). The model learns rally-language structure at
+every position, not just the prediction target.
+
+### 9.3 LM pre-training on visible test action+point
+
+Visible test action+point shots can be used as additional autoregressive
+training data (no SGP). Treat each test rally's shots `1..M-1` as
+unsupervised LM tokens with action+point self-supervision (no server).
+This is a legal extension of P6's test-history-aug paradigm.
+
+### 9.4 Inference
+
+For each rally to predict, the model takes shots `1..N-1` as causal
+input and outputs action+point+server probabilities at position N.
+Same per-rally-1-prediction output shape as v11.
+
+### 9.5 Smoke plan (~1 h GPU, before requesting full commitment)
+
+Single-fold dry-run:
+- Train `causal_lm_smoke` on Fold 1 only, ~20 epochs (truncated).
+- Report:
+  - Fold 1 OV vs v11 baseline (Fold 1 OV ≈ 0.314).
+  - Per-task F1_a / F1_p / AUC.
+  - OOF correlation with v11 (target < 0.85 to be diverse) and with
+    v14_seed2 (target < 0.85).
+  - Per-position loss curve (does the model use the full sequence?).
+
+### 9.6 Stop gates for Path B
+
+Smoke result decides whether to request the full ~30h GPU commitment:
+- **If smoke Fold 1 OV >= v11 baseline (0.314)**: request full commitment.
+- **If smoke Fold 1 OV in [0.295, 0.314] AND OOF correlation with v11 < 0.85**:
+  request commitment for diversity-only zoo addition.
+- **If smoke Fold 1 OV < 0.295 OR OOF correlation > 0.95**: PARK.
+
+### 9.7 Required approvals BEFORE smoke
+
+- Jabir explicit "Open R-010 exploration entry for Path B smoke" (current
+  status: NOT given; per Jabir's 2026-05-10 decision Path B design only).
+- R-010 exploration entry per `COLLABORATION_WORKFLOW.md` §4.5 (kind =
+  `exploration`, includes pre-mortem).
+- Codex APPROVE / APPROVE_WITH_FIXES on R-010 design.
+- Then ~1h GPU smoke under T2-exploration budget.
+- Then if smoke passes: separate Jabir approval for full ~30h GPU
+  commitment.
+
+This entry is the design draft only. Awaiting Path A outcome OR Jabir's
+explicit Path B unlock.
