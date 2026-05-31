@@ -1,0 +1,15 @@
+{
+  "id": "jabir95tsai/aicup-r-211-recvside",
+  "title": "AICUP R 211 Recvside",
+  "code_file": "kaggle_r211_recvside.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": ["jabir95tsai/aicup2026-pingpong-private"],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

@@ -1,0 +1,17 @@
+{
+  "id": "jabir95tsai/aicup-retrain-batch-transformer-a-v11plus-v11",
+  "title": "AICUP retrain batch Transformer A v11plus v11",
+  "code_file": "kaggle_retrain_batch_transformer_a.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "jabir95tsai/aicup2026-pingpong-private"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "enable_tpu": "false",
+  "model_sources": []
+}

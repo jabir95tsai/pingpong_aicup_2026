@@ -1,0 +1,17 @@
+{
+  "id": "jabir95tsai/aicup-r-066-path-b-causal-lm-full-5-fold",
+  "title": "AICUP R-066 Path B causal LM full 5-fold",
+  "code_file": "kaggle_r066_causal_lm_full5fold.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "jabir95tsai/aicup2026-pingpong-private"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

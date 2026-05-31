@@ -1,0 +1,17 @@
+{
+  "id": "jabir95tsai/aicup-r-031-softf1-fold-1-smoke",
+  "title": "AICUP R-031 SoftF1 fold-1 smoke",
+  "code_file": "kaggle_r031_softf1_fold1_smoke.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "jabir95tsai/aicup2026-pingpong-private"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "enable_tpu": "false",
+  "model_sources": []
+}

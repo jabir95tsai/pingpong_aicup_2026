@@ -1,0 +1,17 @@
+{
+  "id": "jabir95tsai/aicup-retrain-batch-mulminet-all-data",
+  "title": "AICUP retrain batch Mulminet all-data",
+  "code_file": "kaggle_retrain_batch_mulminet.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "jabir95tsai/aicup2026-pingpong-private"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "enable_tpu": "false",
+  "model_sources": []
+}

@@ -1,0 +1,78 @@
+# # R-211 — recv_side_est feature, V14 full 5-fold (Kaggle CPU)
+# Evaluates the receiver prior point-SIDE feature (R-211). Full 5-fold because
+# the effect is small + fold-dependent (prior recvhand: fold-1 -0.0015 but mean
+# +0.0005), so a fold-1 smoke would mislead. Produces blendable OOF for R-067cr.
+#
+# Feature module is written from an embedded base64 blob and train_v14.py is
+# runtime-patched, so NO Kaggle dataset push (teammate-parquet hard rule kept).
+
+import os, sys, time, subprocess, shutil, io, base64
+from pathlib import Path
+
+DATA_DIR = Path("/kaggle/input/datasets/jabir95tsai/aicup2026-pingpong-private")
+if not DATA_DIR.exists():
+    DATA_DIR = Path("/kaggle/input/aicup2026-pingpong-private")
+OUT_DIR = Path("/kaggle/working")
+RO_CODE_DIR = DATA_DIR / "code"
+CODE_DIR = OUT_DIR / "src"
+if not CODE_DIR.exists():
+    shutil.copytree(RO_CODE_DIR, CODE_DIR)
+sys.path.insert(0, str(CODE_DIR))
+for d in ["oof_predictions", "models", "submissions", "logs"]:
+    (OUT_DIR / d).mkdir(parents=True, exist_ok=True)
+os.environ["PINGPONG_DATA_DIR"] = str(DATA_DIR)
+
+# ---- write features_v9_recvside.py (R-211) from embedded base64 ----
+FEAT_B64 = "IiIiZmVhdHVyZXNfdjlfcmVjdnNpZGU6IFY5ICsgcmVjdl9zaWRlX2VzdCAgKFItMjExIGhhbmRlZG5lc3Mvc2lkZS1jb25zaXN0ZW5jeSkuCgpBZGRzIE9ORSBpbnRlZ2VyIGZlYXR1cmUgYGByZWN2X3NpZGVfZXN0IGluIHswLCAxLCAyfWBgIHRvIHRoZSB2OSBmZWF0dXJlIHNldC4KSXQgZXN0aW1hdGVzIHRoZSBkb21pbmFudCBwb2ludC1TSURFIHRlbmRlbmN5IG9mIHRoZSAqcmVjZWl2ZXIqIG9mIHRhcmdldCBzaG90Ck4sIGZyb20gdGhhdCByZWNlaXZlcidzIE9XTiBwcmlvciBzaG90cyBpbiB0aGUgU0FNRSByYWxseS4KCk1vdGl2YXRpb24gKFItMjExLCAyMDI2LTA1LTMxIGdhcCByZWFzc2Vzc21lbnQpOgogIHBvaW50SWQncyBGSC9CSCBheGlzIGlzIHJlY2VpdmVyLXJlbGF0aXZlIChoYW5kZWRuZXNzKS4gVGhlIGVhcmxpZXIKICBgYHJlY3ZfaGFuZF9lc3RgYCAoZmVhdHVyZXNfdjlfcmVjdmhhbmQpIGVzdGltYXRlZCB0aGlzIGZyb20gcHJpb3IgaGFuZElkCiAgTU9ERSDigJQgYSB3ZWFrIHByb3h5LCBzaW5jZSBldmVyeSBwbGF5ZXIgdXNlcyBib3RoIEZIIGFuZCBCSCBzdHJva2VzOyBpdCBnYXZlCiAgb25seSArMC4wMDA1IE9WICh0aG91Z2ggaXQgZGlkIGJyZWFrIHRoZSBCSF9zaG9ydCBGMT0wIGZsb29yKS4gQSBwcm9iZSBzaG93ZWQKICB0aGUgcmVjZWl2ZXIncyBwcmlvciBwb2ludC1TSURFIGlzIGEgc3Ryb25nZXIgYXhpcyBzaWduYWw6IGNvbmRpdGlvbmluZyB0aGUKICBuZXh0IHBvaW50LXNpZGUgb24gdGhlIHN0cmlrZXIncyBvd24gcHJpb3Itc2lkZSBtYWpvcml0eSBzaGlmdHMgUChGSCkgYnkKICArMC4wNjIgLyAtMC4wODUgKHNwcmVhZCArMC4xNDcpLiByZWN2X3NpZGVfZXN0IGV4cG9zZXMgZXhhY3RseSB0aGF0LgoKSGFyZC1ydWxlIGNvbXBsaWFuY2UgKG1pcnJvcnMgdGhlIENvZGV4IFItMDAxIHJlY3ZoYW5kIGRpc2NpcGxpbmUpOgogIDEuIEZvciBhIGZlYXR1cmUgcm93IHdpdGggbmV4dF9zdHJpa2VOdW1iZXI9TiwgdGhlIHJlY2VpdmVyIGlzIHRoZSBzaG9vdGVyIG9mCiAgICAgc3RyaWtlIE4tMSAoZ2FtZVBsYXllcklkIGF0IE4tMSkuIFdlIG9ubHkgZXZlciByZWFkIHJvd3Mgc3RyaWtlTnVtYmVyIDwgTi4KICAyLiBTb3VyY2Ugcm93cyBhc3NlcnRlZCB0byBuZXZlciBpbmNsdWRlIHN0cmlrZU51bWJlciA+PSBOIChwcmVmaXgtb25seSkuCiAgMy4gcG9pbnRJZCB2YWx1ZXMgb3V0c2lkZSB0aGUgRkgvQkggc2lkZSBzZXRzIGFyZSBpZ25vcmVkIChtaWQvbWlzcyBjYXJyeSBubwogICAgIHNpZGUpLiBNb2RlIHRha2VuIG92ZXIge0ZILXNpZGUsIEJILXNpZGV9OyB0aWUgb3Igbm8gb2JzZXJ2YXRpb24gLT4gMC4KICA0LiBTaW5nbGUgaW50ZWdlciBmZWF0dXJlIG9ubHkg4oCUIG5vIGNvdW50L2xlbmd0aCBjb21wYW5pb24gKG92ZXJmaXQgZ3VhcmQpLgogIDUuIFdpdGhpbi1yYWxseSArIHBvc2l0aW9uYWwgb25seTogZ3JvdXBzIGJ5IGdhbWVQbGF5ZXJJZCB0byBpc29sYXRlIHRoZQogICAgIHJlY2VpdmVyJ3Mgb3duIHByaW9yIHNob3RzIElOIFRISVMgUkFMTFkuIE5vIGNyb3NzLXJhbGx5IGFnZ3JlZ2F0aW9uLCBubwogICAgIHBsYXllci1pZGVudGl0eSBwcm9maWxlIC0+IHRyYW5zZmVycyB0byBkZS1pZGVudGlmaWVkIHRlc3QuCiAgNi4gUHJpbnRzIHRyYWluL3Rlc3QgdmFsdWUgZGlzdHJpYnV0aW9uLgoiIiIKaW1wb3J0IG51bXB5IGFzIG5wCmltcG9ydCBwYW5kYXMgYXMgcGQKaW1wb3J0IHN5cwppbXBvcnQgb3MKCnN5cy5wYXRoLmluc2VydCgwLCBvcy5wYXRoLmRpcm5hbWUob3MucGF0aC5hYnNwYXRoKF9fZmlsZV9fKSkpCmZyb20gZmVhdHVyZXNfdjkgaW1wb3J0ICgKICAgIGJ1aWxkX2ZlYXR1cmVzX3Y5LCBjb21wdXRlX2dsb2JhbF9zdGF0c192OSwgZ2V0X2ZlYXR1cmVfbmFtZXNfdjksCikKCiMgUmUtZXhwb3J0IGZvciBzeW1tZXRyeSB3aXRoIG90aGVyIGZlYXR1cmUgbW9kdWxlcy4KY29tcHV0ZV9nbG9iYWxfc3RhdHNfdjlfcmVjdnNpZGUgPSBjb21wdXRlX2dsb2JhbF9zdGF0c192OQoKRkhfU0lERSA9ICgxLCA0LCA3KSAgICMgRkggc2hvcnQvaGFsZi9sb25nCkJIX1NJREUgPSAoMywgNiwgOSkgICAjIEJIIHNob3J0L2hhbGYvbG9uZwoKCmRlZiBnZXRfZmVhdHVyZV9uYW1lc192OV9yZWN2c2lkZShmZWF0X2RmOiBwZC5EYXRhRnJhbWUpIC0+IGxpc3Q6CiAgICBiYXNlID0gZ2V0X2ZlYXR1cmVfbmFtZXNfdjkoZmVhdF9kZikKICAgIGlmICJyZWN2X3NpZGVfZXN0IiBpbiBmZWF0X2RmLmNvbHVtbnMgYW5kICJyZWN2X3NpZGVfZXN0IiBub3QgaW4gYmFzZToKICAgICAgICByZXR1cm4gYmFzZSArIFsicmVjdl9zaWRlX2VzdCJdCiAgICByZXR1cm4gYmFzZQoKCmRlZiBfY29tcHV0ZV9yZWN2X3NpZGVfZXN0KGZlYXRfZGY6IHBkLkRhdGFGcmFtZSwgcmF3X2RmOiBwZC5EYXRhRnJhbWUpIC0+IG5wLm5kYXJyYXk6CiAgICAiIiJQZXItcm93IHJlY3Zfc2lkZV9lc3QgaW4gezAsIDEsIDJ9LgoKICAgIEZvciBlYWNoIChyYWxseV91aWQsIG5leHRfc3RyaWtlTnVtYmVyPU4pIHRoZSByZWNlaXZlciBpcyB0aGUgc2hvb3RlciBvZgogICAgc3RyaWtlIE4tMS4gT3ZlciBhbGwgcm93cyBzdHJpa2VOdW1iZXIgPCBOIGluIHRoZSBzYW1lIHJhbGx5IHdoZXJlIHRoZQogICAgc2hvb3RlciBtYXRjaGVzIHRoYXQgcmVjZWl2ZXIgYW5kIHBvaW50SWQgaXMgb24gYSBzaWRlLCByZXR1cm4gdGhlIHNpZGUKICAgIG1vZGUgKDE9Rkgtc2lkZSwgMj1CSC1zaWRlOyAwIG9uIHRpZSAvIG5vIG9ic2VydmF0aW9uKS4KICAgICIiIgogICAgcmF3ID0gcmF3X2RmW1sicmFsbHlfdWlkIiwgInN0cmlrZU51bWJlciIsICJnYW1lUGxheWVySWQiLCAicG9pbnRJZCJdXS5jb3B5KCkKICAgIHJhd1sic3RyaWtlTnVtYmVyIl0gPSByYXdbInN0cmlrZU51bWJlciJdLmFzdHlwZShpbnQpCiAgICByYXdbImdhbWVQbGF5ZXJJZCJdID0gcmF3WyJnYW1lUGxheWVySWQiXS5hc3R5cGUoaW50KQogICAgcmF3WyJwb2ludElkIl0gPSByYXdbInBvaW50SWQiXS5hc3R5cGUoaW50KQoKICAgIGZoX3NldCA9IG5wLmFycmF5KEZIX1NJREUpCiAgICBiaF9zZXQgPSBucC5hcnJheShCSF9TSURFKQoKICAgIGNhY2hlOiBkaWN0ID0ge30KICAgIG1heF9zcmNfdmlvbGF0aW9ucyA9IDAKCiAgICBmb3IgcmlkLCBncnAgaW4gcmF3Lmdyb3VwYnkoInJhbGx5X3VpZCIsIHNvcnQ9RmFsc2UpOgogICAgICAgIGdycCA9IGdycC5zb3J0X3ZhbHVlcygic3RyaWtlTnVtYmVyIikucmVzZXRfaW5kZXgoZHJvcD1UcnVlKQogICAgICAgIHNucyA9IGdycFsic3RyaWtlTnVtYmVyIl0udG9fbnVtcHkoZHR5cGU9aW50KQogICAgICAgIGdwaWRzID0gZ3JwWyJnYW1lUGxheWVySWQiXS50b19udW1weShkdHlwZT1pbnQpCiAgICAgICAgcHRzID0gZ3JwWyJwb2ludElkIl0udG9fbnVtcHkoZHR5cGU9aW50KQoKICAgICAgICBmb3IgayBpbiByYW5nZShsZW4oZ3JwKSk6CiAgICAgICAgICAgIE4gPSBpbnQoc25zW2tdKSArIDEKICAgICAgICAgICAgcmVjZWl2ZXJfaWQgPSBpbnQoZ3BpZHNba10pCgogICAgICAgICAgICBiYXNlX21hc2sgPSAoc25zIDwgTikgJiAoZ3BpZHMgPT0gcmVjZWl2ZXJfaWQpCiAgICAgICAgICAgIGlmIGJhc2VfbWFzay5zdW0oKSA9PSAwOgogICAgICAgICAgICAgICAgY2FjaGVbKHJpZCwgTildID0gMAogICAgICAgICAgICAgICAgY29udGludWUKCiAgICAgICAgICAgIG1heF9zcmNfc24gPSBpbnQoc25zW2Jhc2VfbWFza10ubWF4KCkpCiAgICAgICAgICAgIGlmIG1heF9zcmNfc24gPj0gTjoKICAgICAgICAgICAgICAgIG1heF9zcmNfdmlvbGF0aW9ucyArPSAxCgogICAgICAgICAgICBwX3ZhbHMgPSBwdHNbYmFzZV9tYXNrXQogICAgICAgICAgICBjX2ZoID0gaW50KG5wLmlzaW4ocF92YWxzLCBmaF9zZXQpLnN1bSgpKQogICAgICAgICAgICBjX2JoID0gaW50KG5wLmlzaW4ocF92YWxzLCBiaF9zZXQpLnN1bSgpKQogICAgICAgICAgICBpZiBjX2ZoID4gY19iaDoKICAgICAgICAgICAgICAgIGNhY2hlWyhyaWQsIE4pXSA9IDEKICAgICAgICAgICAgZWxpZiBjX2JoID4gY19maDoKICAgICAgICAgICAgICAgIGNhY2hlWyhyaWQsIE4pXSA9IDIKICAgICAgICAgICAgZWxzZToKICAgICAgICAgICAgICAgIGNhY2hlWyhyaWQsIE4pXSA9IDAgICMgdGllIC8gbm8gc2lkZSBvYnNlcnZlZCAtPiB1bmtub3duCgogICAgYXNzZXJ0IG1heF9zcmNfdmlvbGF0aW9ucyA9PSAwLCAoCiAgICAgICAgZiJyZWN2X3NpZGVfZXN0OiB7bWF4X3NyY192aW9sYXRpb25zfSByb3dzIHNvdXJjZWQgZnJvbSBzdHJpa2VOdW1iZXIgPj0gIgogICAgICAgICJuZXh0X3N0cmlrZU51bWJlci4gUHJlZml4LW9ubHkgaW52YXJpYW50IHZpb2xhdGVkLiIpCgogICAgbiA9IGxlbihmZWF0X2RmKQogICAgb3V0ID0gbnAuemVyb3MobiwgZHR5cGU9bnAuaW50OCkKICAgIHJhbGx5X2FyciA9IGZlYXRfZGZbInJhbGx5X3VpZCJdLnRvX251bXB5KCkKICAgIG5zbl9hcnIgPSBmZWF0X2RmWyJuZXh0X3N0cmlrZU51bWJlciJdLnRvX251bXB5KGR0eXBlPWludCkKICAgIGZvciBpIGluIHJhbmdlKG4pOgogICAgICAgIG91dFtpXSA9IGNhY2hlLmdldCgocmFsbHlfYXJyW2ldLCBpbnQobnNuX2FycltpXSkpLCAwKQogICAgcmV0dXJuIG91dAoKCmRlZiBidWlsZF9mZWF0dXJlc192OV9yZWN2c2lkZShkZjogcGQuRGF0YUZyYW1lLCBpc190cmFpbjogYm9vbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGdsb2JhbF9zdGF0c192OTogZGljdCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHJhd19kZjogcGQuRGF0YUZyYW1lID0gTm9uZSkgLT4gcGQuRGF0YUZyYW1lOgogICAgIiIiVjkgZmVhdHVyZXMgKyByZWN2X3NpZGVfZXN0LiIiIgogICAgZmVhdF9kZiA9IGJ1aWxkX2ZlYXR1cmVzX3Y5KGRmLCBpc190cmFpbj1pc190cmFpbiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZ2xvYmFsX3N0YXRzX3Y5PWdsb2JhbF9zdGF0c192OSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcmF3X2RmPXJhd19kZikKICAgIGlmIHJhd19kZiBpcyBOb25lOgogICAgICAgIHJhd19kZiA9IGRmCgogICAgcmVjdl9zaWRlID0gX2NvbXB1dGVfcmVjdl9zaWRlX2VzdChmZWF0X2RmLCByYXdfZGYpCiAgICBmZWF0X2RmWyJyZWN2X3NpZGVfZXN0Il0gPSByZWN2X3NpZGUuYXN0eXBlKG5wLmludDgpCgogICAgbiA9IGxlbihyZWN2X3NpZGUpCiAgICBwY3QwID0gKHJlY3Zfc2lkZSA9PSAwKS5tZWFuKCkgKiAxMDAuMAogICAgcGN0MSA9IChyZWN2X3NpZGUgPT0gMSkubWVhbigpICogMTAwLjAKICAgIHBjdDIgPSAocmVjdl9zaWRlID09IDIpLm1lYW4oKSAqIDEwMC4wCiAgICBsYWJlbCA9ICJ0cmFpbiIgaWYgaXNfdHJhaW4gZWxzZSAidGVzdCIKICAgIHByaW50KGYiICBbcmVjdl9zaWRlX2VzdF0ge2xhYmVsfSBuPXtufSAgdW5rbm93bigwKT17cGN0MDouMWZ9JSAgIgogICAgICAgICAgZiJGSC1zaWRlKDEpPXtwY3QxOi4xZn0lICBCSC1zaWRlKDIpPXtwY3QyOi4xZn0lIikKCiAgICByZXR1cm4gZmVhdF9kZgo="
+feat_path = CODE_DIR / "features_v9_recvside.py"
+io.open(feat_path, "w", encoding="utf-8").write(base64.b64decode(FEAT_B64).decode("utf-8"))
+print("OK wrote", feat_path.name, feat_path.stat().st_size, "bytes")
+
+# ---- runtime-patch train_v14.py to add the v9_recvside feature-set branch ----
+tv = CODE_DIR / "train_v14.py"
+src = io.open(tv, encoding="utf-8").read()
+if 'v9_recvside' not in src:
+    ANCHOR = '        print("  Feature set: v9_recvhand (v9 + recv_hand_est)")'
+    ADD = ANCHOR + '''
+    elif args.feature_set == "v9_recvside":
+        from features_v9_recvside import (
+            compute_global_stats_v9_recvside as compute_global_stats_v9,
+            build_features_v9_recvside as build_features_v9,
+            get_feature_names_v9_recvside as get_feature_names_v9,
+        )
+        print("  Feature set: v9_recvside (v9 + recv_side_est, R-211)")'''
+    assert ANCHOR in src, "PATCH FAIL: v9_recvhand branch anchor not found in train_v14.py"
+    src = src.replace(ANCHOR, ADD, 1)
+    io.open(tv, "w", encoding="utf-8").write(src)
+assert 'v9_recvside' in io.open(tv, encoding="utf-8").read(), "PATCH VERIFY FAIL"
+print("OK patched train_v14.py with v9_recvside branch")
+
+cmd = [
+    "python", "-u", str(CODE_DIR / "train_v14.py"),
+    "--folds", "5",
+    "--feature-set", "v9_recvside",
+    "--tag", "v14_r211_recvside",
+    "--seed", "51966",
+]
+print("Cmd:", " ".join(cmd))
+env = os.environ.copy()
+env["TRAIN_PATH"] = str(DATA_DIR / "train.csv")
+env["TEST_PATH"] = str(DATA_DIR / "test_new.csv")
+t0 = time.time()
+log_path = OUT_DIR / "logs" / "r211_v14_recvside.log"
+with open(log_path, "w") as f:
+    proc = subprocess.run(cmd, env=env, stdout=f, stderr=subprocess.STDOUT)
+print(f"Elapsed {(time.time()-t0)/60:.1f} min  exit={proc.returncode}")
+print("---- log tail ----")
+print(io.open(log_path, encoding="utf-8").read()[-4000:])
+assert proc.returncode == 0, f"trainer exit {proc.returncode}"
+
+import numpy as np
+print("---- artifacts ----")
+ok = True
+for nm in ["oof_act","oof_pt","oof_srv","test_act","test_pt","test_srv"]:
+    p = OUT_DIR / "oof_predictions" / f"v14_r211_recvside_{nm}.npy"
+    ok = ok and p.exists()
+    print(f"  {nm:10s} {'OK' if p.exists() else 'MISSING'}")
+assert ok, "missing OOF/test arrays"
+print("R-211 full 5-fold complete.")
