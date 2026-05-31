@@ -76,8 +76,8 @@ POINT_CW = {
     5: 0.9, 6: 1.5, 7: 0.8, 8: 0.7, 9: 0.6,
 }
 
-GROUP_A = ["v16_testhist_aug"]
-GROUP_B = ["v14_avg3", "v14_seed0", "v14_seed1", "v14_seed2"]
+GROUP_A = ["v16_testhist_aug", "v16_avg3", "v16_seed1", "v16_seed2"]
+GROUP_B = ["v14_avg3", "v14_seed0", "v14_seed1", "v14_seed2", "v14_recvhand", "v14_pseudo_v1"]
 GROUP_C = ["v12_5f"]
 # Group D (Transformer): includes v11_aug (P6 V11+test-history aug) as of 2026-05-06.
 # At least 1 from D required; selection logic in enumerate_subsets allows {v11},
@@ -423,6 +423,9 @@ def main():
                     help="Submission filename prefix.")
     ap.add_argument("--replace", default=None,
                     help="Comma-separated old:new (e.g. v16_testhist_aug:v16_avg3).")
+    ap.add_argument("--only-tags", default=None,
+                    help="Comma-separated tag allowlist. Useful after a test reset when "
+                         "only a subset of components has fresh test predictions.")
     ap.add_argument("--anchor-from", default=None,
                     help="Path to a prior ranking CSV (e.g. submissions/zoo_v2_ranking.csv) "
                          "to anchor the search around. P12: weight perturbation around the "
@@ -452,7 +455,20 @@ def main():
     def remap(t: str) -> str:
         return replace_map.get(t, t)
 
-    used_tags = sorted({remap(t) for t in ALL_TAGS})
+    only_tag_set = None
+    if args.only_tags:
+        only_tag_set = {
+            remap(tok.strip())
+            for tok in args.only_tags.split(",")
+            if tok.strip()
+        }
+        print(f"only_tags={sorted(only_tag_set)}")
+
+    used_tags = (
+        sorted(only_tag_set)
+        if only_tag_set is not None
+        else sorted({remap(t) for t in ALL_TAGS})
+    )
     data = load_components(used_tags)
     comp = data["comp"]
     y_a, y_p, y_s = data["y_a"], data["y_p"], data["y_s"]
@@ -488,6 +504,8 @@ def main():
     unique_subsets: List[Tuple[List[str], List[str]]] = []
     for orig in raw_subsets:
         used = sorted(set(remap(t) for t in orig))
+        if only_tag_set is not None and not set(used).issubset(only_tag_set):
+            continue
         if not (3 <= len(used) <= 6):
             continue
         key = tuple(used)

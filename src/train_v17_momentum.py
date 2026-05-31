@@ -1,8 +1,22 @@
-"""V16 Pipeline — V14 + supervised test-history augmentation
+"""V17 Pipeline — V16 backbone + momentum/initiative/pressure features (R-015)
 
-Adds 2,353 supervised action/point training pairs extracted from test rally
-histories (test shots 2..n per rally, predicting each non-first shot from its
-preceding history).
+Cloned from train_v16_testhist_aug.py 2026-05-11. Preserves V16's supervised
+test-history augmentation backbone. Adds:
+
+  --feature-set v9_momentum       (default): import features_v17_momentum.
+                                  Other choices: v9, v9_recvhand for ablation.
+  --momentum-groups core|all      (default core): selects v17m feature subset.
+                                  core = Groups 1+2+3 (26 features)
+                                  all  = Groups 1+2+3+4+5 (41 features)
+  --max-folds N                   (default 0): if >0, run only first N folds
+                                  of the standard 5-fold partition with full
+                                  n_boost. R-011 / R-002 pattern.
+
+Per Codex APPROVE_WITH_FIXES (2026-05-11) on R-015:
+  - Same-budget Fold-1 smoke (use --max-folds 1 --n-boost 3000 --es 200).
+  - core smoke first; all smoke only if core passes.
+  - Pressure scalar fixed-constant only (no fold stats).
+  - SOURCE_COLS asserted in features_v17_momentum at build time.
 
 Guard 1 — SGP isolation: aug rows carry serverGetPoint=-1 (dummy); assert all
 values exactly -1 and never pass aug rows to the server model.
@@ -10,7 +24,7 @@ values exactly -1 and never pass aug rows to the server model.
 Guard 2 — fold-stats isolation: compute_global_stats_v9 is called on real
 tr_raw only; aug features are built using those fold_stats.
 
-OOF shape is identical to V14: n_samples = 69,712 real training samples.
+OOF shape is identical to V14/V16: n_samples = 69,712 real training samples.
 Aug rows are training-only; they never appear in val or OOF.
 """
 import sys, os, time, warnings, gc, argparse
@@ -215,7 +229,7 @@ def main():
                         help="Override n_boost (default smoke=200, full=3000)")
     parser.add_argument("--es",      type=int, default=-1,
                         help="Override early stopping rounds")
-    parser.add_argument("--tag",     type=str, default="v16_testhist_aug",
+    parser.add_argument("--tag",     type=str, default="v17_momentum",
                         help="Tag for OOF/test output filenames")
     parser.add_argument("--seed",    type=int, default=RANDOM_SEED,
                         help="Random seed for LGB/XGB/CB model init "
@@ -225,14 +239,21 @@ def main():
                              "2026-05-06 LB reset). Default: config TEST_PATH. The aug "
                              "parquet auto-pick logic uses this path's basename to "
                              "select test_history_pairs_new.parquet vs the legacy file.")
-    parser.add_argument("--include-old-test", type=str, default=None,
-                        help="(NEW 2026-05-13) Path to old test.csv. Per AICUP "
-                             "organizers' announcement allowing old test as training data.")
-    parser.add_argument("--feature-set", type=str, default="v9",
-                        choices=["v9", "v15feat", "v15feat_b", "v15feat_c"],
-                        help="(NEW 2026-05-23) Feature module to use. "
-                             "v9 = default. v15feat = R-029a prefix aggregates "
-                             "(R-034 LB-WIN axis). v15feat_b/c = extensions.")
+    parser.add_argument("--feature-set", type=str, default="v9_momentum",
+                        choices=["v9", "v9_recvhand", "v9_momentum"],
+                        help="Feature set: 'v9' (no recvhand), 'v9_recvhand' "
+                             "(R-001 baseline), or 'v9_momentum' (R-015 default: "
+                             "v9 + recvhand + momentum/initiative/pressure features).")
+    parser.add_argument("--momentum-groups", type=str, default="core",
+                        choices=["core", "all"],
+                        help="(R-015) v17m feature subset. core=Groups 1+2+3 "
+                             "(26 features), all=Groups 1+2+3+4+5 (41 features). "
+                             "Only used when --feature-set v9_momentum.")
+    parser.add_argument("--max-folds", type=int, default=0,
+                        help="If >0, run only the first N folds of the standard "
+                             "5-fold GroupKFold partition with FULL n_boost. "
+                             "R-011 / R-002 pattern. Default 0 = run all --folds. "
+                             "For Codex same-budget Fold-1 smoke: --max-folds 1.")
     args = parser.parse_args()
 
     is_smoke  = args.smoke
@@ -271,67 +292,37 @@ def main():
     from catboost import CatBoostClassifier
     import lightgbm as lgb
 
-    # Feature module selection (extended 2026-05-23 to allow v15feat for the
-    # v14 + test-history aug + v15feat_a stack — Tier 2 of Codex data-gen plan).
-    if args.feature_set == "v9":
+    if args.feature_set == "v9_momentum":
+        # R-015: set MOMENTUM_GROUPS_ACTIVE before module import
+        os.environ["MOMENTUM_GROUPS_ACTIVE"] = args.momentum_groups
+        from features_v17_momentum import (
+            compute_global_stats_v17_momentum as compute_global_stats_v9,
+            build_features_v17_momentum as build_features_v9,
+            get_feature_names_v17_momentum as get_feature_names_v9,
+        )
+        print(f"  Feature set: v9_momentum (R-015, momentum_groups={args.momentum_groups})")
+    elif args.feature_set == "v9_recvhand":
+        from features_v9_recvhand import (
+            compute_global_stats_v9_recvhand as compute_global_stats_v9,
+            build_features_v9_recvhand as build_features_v9,
+            get_feature_names_v9_recvhand as get_feature_names_v9,
+        )
+        print("  Feature set: v9_recvhand (R-001 baseline)")
+    else:
         from features_v9 import (compute_global_stats_v9, build_features_v9,
                                   get_feature_names_v9)
-        compute_global_stats_v6 = compute_global_stats_v9
-        get_feature_names_v6 = get_feature_names_v9
-        def build_features_v6(df, is_train, global_stats_v6, raw_df=None):
-            return build_features_v9(df, is_train=is_train,
-                                      global_stats_v9=global_stats_v6,
-                                      raw_df=raw_df)
-        print(f"  Feature set: v9 (default)")
-    elif args.feature_set == "v15feat":
-        from features_v15feat import (
-            compute_global_stats_v15feat as compute_global_stats_v6,
-            build_features_v15feat as build_features_v6_inner,
-            get_feature_names_v15feat as get_feature_names_v6,
-        )
-        def build_features_v6(df, is_train, global_stats_v6, raw_df=None):
-            return build_features_v6_inner(df, is_train=is_train,
-                                            global_stats_v9=global_stats_v6,
-                                            raw_df=raw_df)
-        print(f"  Feature set: v15feat (R-029a, R-034 LB-WIN axis: 36 prefix aggregates)")
-    elif args.feature_set == "v15feat_b":
-        from features_v15feat_b import (
-            compute_global_stats_v15feat_b as compute_global_stats_v6,
-            build_features_v15feat_b as build_features_v6_inner,
-            get_feature_names_v15feat_b as get_feature_names_v6,
-        )
-        def build_features_v6(df, is_train, global_stats_v6, raw_df=None):
-            return build_features_v6_inner(df, is_train=is_train,
-                                            global_stats_v9=global_stats_v6,
-                                            raw_df=raw_df)
-        print(f"  Feature set: v15feat_b")
-    elif args.feature_set == "v15feat_c":
-        from features_v15feat_c import (
-            compute_global_stats_v15feat_c as compute_global_stats_v6,
-            build_features_v15feat_c as build_features_v6_inner,
-            get_feature_names_v15feat_c as get_feature_names_v6,
-        )
-        def build_features_v6(df, is_train, global_stats_v6, raw_df=None):
-            return build_features_v6_inner(df, is_train=is_train,
-                                            global_stats_v9=global_stats_v6,
-                                            raw_df=raw_df)
-        print(f"  Feature set: v15feat_c")
-    else:
-        raise ValueError(f"Unsupported feature-set: {args.feature_set}")
+        print("  Feature set: v9 (no recvhand, no momentum)")
+
+    compute_global_stats_v6 = compute_global_stats_v9
+    get_feature_names_v6     = get_feature_names_v9
+    def build_features_v6(df, is_train, global_stats_v6, raw_df=None):
+        return build_features_v9(df, is_train=is_train,
+                                  global_stats_v9=global_stats_v6,
+                                  raw_df=raw_df)
 
     # ── Load and clean data ──────────────────────────────────────────────────
     raw_train = pd.read_csv(TRAIN_PATH)
     raw_test  = pd.read_csv(test_path)
-    if args.include_old_test:
-        old_test = pd.read_csv(args.include_old_test)
-        n_before = len(raw_train)
-        required_cols = list(raw_train.columns)
-        missing_cols = [c for c in required_cols if c not in old_test.columns]
-        if missing_cols:
-            raise ValueError(f"old test missing columns: {missing_cols}")
-        raw_train = pd.concat([raw_train, old_test[required_cols]], ignore_index=True)
-        print(f"  [include-old-test] Added {len(raw_train) - n_before} rows from {args.include_old_test} "
-              f"({old_test['rally_uid'].nunique()} rallies, {old_test['match'].nunique()} matches)")
     train_df, test_df, player_map = clean_data(raw_train, raw_test)
     test_df["serverGetPoint"] = -1
 
@@ -393,6 +384,11 @@ def main():
     splits = list(gkf.split(np.arange(n_samples), groups=match_all))
     if is_smoke:
         splits = splits[:1]
+    elif args.max_folds and args.max_folds > 0:
+        # R-015 same-budget Fold-1 smoke / R-011 partial-fold pattern
+        splits = splits[:args.max_folds]
+        print(f"  --max-folds {args.max_folds} active: running first "
+              f"{len(splits)} of {n_folds} folds with full n_boost.")
 
     # Test features (one row per test rally)
     feat_test  = build_features_v6(test_df, is_train=False,
@@ -708,10 +704,14 @@ def main():
     print(f"  OOF samples: {n_oof}/{n_samples} ({100*n_oof/n_samples:.0f}%)")
 
     # Full-run assertion: all real training rows must be covered in OOF
-    if not is_smoke and n_folds == N_FOLDS:
+    # Skip when --max-folds N < N_FOLDS (R-015 same-budget Fold-1 smoke pattern)
+    if not is_smoke and n_folds == N_FOLDS and not (args.max_folds and args.max_folds > 0):
         assert n_oof == n_samples, \
             f"GUARD FAIL: OOF mask={n_oof}, expected n_samples={n_samples}"
         print(f"  ASSERT PASS: OOF mask == {n_samples} real train rows")
+    elif args.max_folds and args.max_folds > 0:
+        print(f"  ASSERT SKIP: --max-folds {args.max_folds} active; "
+              f"OOF mask={n_oof} (subset OK, full-coverage assertion deferred to R-016 full run)")
 
     oof_act_ruled = apply_action_rules(oof_act[oof_mask], nsn_all[oof_mask])
     f1_a_oof  = action_macro_f1(y_a_all[oof_mask], oof_act_ruled)

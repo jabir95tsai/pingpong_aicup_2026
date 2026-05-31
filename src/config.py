@@ -5,8 +5,13 @@ import os
 def _has_required_data_files(path):
     if not path:
         return False
-    required = ["train.csv", "test.csv", "sample_submission.csv"]
-    return all(os.path.exists(os.path.join(path, name)) for name in required)
+    required = ["train.csv", "sample_submission.csv"]
+    has_required = all(os.path.exists(os.path.join(path, name)) for name in required)
+    has_test = any(
+        os.path.exists(os.path.join(path, name))
+        for name in ("test_new.csv", "test.csv")
+    )
+    return has_required and has_test
 
 
 def _resolve_data_dir(project_root):
@@ -22,6 +27,20 @@ def _resolve_data_dir(project_root):
     return os.path.abspath(os.path.join(project_root, "data"))
 
 
+def _resolve_test_path(data_dir):
+    """Prefer the post-reset test_new.csv when present, with an env override."""
+    env_test = os.environ.get("PINGPONG_TEST_FILE")
+    if env_test:
+        if os.path.isabs(env_test):
+            return os.path.abspath(env_test)
+        return os.path.abspath(os.path.join(data_dir, env_test))
+
+    test_new = os.path.join(data_dir, "test_new.csv")
+    if os.path.exists(test_new):
+        return os.path.abspath(test_new)
+    return os.path.abspath(os.path.join(data_dir, "test.csv"))
+
+
 # Paths
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = _resolve_data_dir(PROJECT_ROOT)
@@ -29,7 +48,9 @@ MODEL_DIR = os.path.join(PROJECT_ROOT, "models")
 SUBMISSION_DIR = os.path.join(PROJECT_ROOT, "submissions")
 
 TRAIN_PATH = os.path.join(DATA_DIR, "train.csv")
-TEST_PATH = os.path.join(DATA_DIR, "test.csv")
+TEST_PATH = _resolve_test_path(DATA_DIR)
+TEST_FILE = os.path.basename(TEST_PATH)
+OLD_TEST_PATH = os.path.join(DATA_DIR, "test.csv")
 SAMPLE_SUB_PATH = os.path.join(DATA_DIR, "sample_submission.csv")
 
 # Column definitions

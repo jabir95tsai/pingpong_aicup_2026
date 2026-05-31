@@ -1,11 +1,8 @@
-"""Build supervised action/point training pairs from test.csv known history.
+"""Build supervised action/point training pairs from the active test history.
 
 For each test rally with visible shots 1 .. n-1 (where shot n is the contest
 prediction target), the feature builder in is_train=True mode generates
-(n-1) - 1 = n-2 training pairs (predicting each non-first shot from its
-preceding history).  Summing over all 1,236 rallies:
-
-    pairs = total_test_shots - n_rallies = 3589 - 1236 = 2353
+(n-1) - 1 = n-2 training pairs, i.e. total_test_rows - n_rallies.
 
 This script only pre-processes the raw test rows and saves them as a
 parquet that train_v16_testhist_aug.py will consume.  All actual feature
@@ -23,10 +20,6 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import TEST_PATH
 
-EXPECTED_TEST_ROWS  = 3589
-EXPECTED_RALLIES    = 1236
-EXPECTED_AUG_PAIRS  = EXPECTED_TEST_ROWS - EXPECTED_RALLIES   # 2353
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -39,19 +32,24 @@ def main():
     out_path = args.out
     if out_path is None:
         data_dir = os.path.dirname(os.path.abspath(args.test))
-        out_path = os.path.join(data_dir, "test_history_pairs.parquet")
+        test_name = os.path.basename(args.test)
+        out_name = (
+            "test_history_pairs_new.parquet"
+            if test_name == "test_new.csv"
+            else "test_history_pairs.parquet"
+        )
+        out_path = os.path.join(data_dir, out_name)
 
     print(f"Loading test data from: {args.test}")
     raw_test = pd.read_csv(args.test)
 
     n_rows    = len(raw_test)
     n_rallies = raw_test["rally_uid"].nunique()
-    print(f"  Test rows    : {n_rows}   (expected {EXPECTED_TEST_ROWS})")
-    print(f"  Test rallies : {n_rallies}  (expected {EXPECTED_RALLIES})")
+    print(f"  Test rows    : {n_rows}")
+    print(f"  Test rallies : {n_rallies}")
 
     expected_pairs = n_rows - n_rallies
-    print(f"  Expected aug pairs (rows - rallies): {expected_pairs}"
-          f"  (canonical {EXPECTED_AUG_PAIRS})")
+    print(f"  Expected aug pairs (rows - rallies): {expected_pairs}")
 
     # ── SGP guard: overwrite any existing SGP with dummy -1 ─────────────────
     # test.csv may contain real serverGetPoint labels (0/1) as row-level context.
@@ -86,7 +84,7 @@ def main():
     raw_test.to_parquet(out_path, index=False)
     print(f"\n  Saved: {out_path}")
     print(f"  Rows: {len(raw_test)}")
-    print("\nDone. Verify aug feature count == 2353 inside train_v16_testhist_aug.py.")
+    print(f"\nDone. Verify aug feature count == {expected_pairs} inside training logs.")
 
 
 if __name__ == "__main__":

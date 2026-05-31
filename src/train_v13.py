@@ -208,7 +208,25 @@ def main():
                         help="Override early stopping rounds")
     parser.add_argument("--tag",      type=str, default="v13",
                         help="Tag for OOF/test output filenames (default: v12)")
+    parser.add_argument("--test-path", type=str, default=None,
+                        help="Override TEST_PATH (e.g. data/test_new.csv after the "
+                             "2026-05-06 LB reset). Default: config TEST_PATH.")
+    parser.add_argument("--include-old-test", type=str, default=None,
+                        help="(NEW 2026-05-13) Path to old test.csv. Per AICUP "
+                             "organizers' 2026-05-13 announcement.")
+    # Use a sentinel so we don't reference RANDOM_SEED as a default; Python's
+    # local-scope rules would otherwise turn it into an unbound local (the line
+    # below assigns to a same-named variable). Resolve at runtime instead.
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Global random seed (default: config RANDOM_SEED=42). "
+                             "Controls numpy, LGB, XGB, CB random states.")
     args = parser.parse_args()
+    # Override the module-level RANDOM_SEED via globals() so the rebinding is
+    # visible to ALL `RANDOM_SEED` references in this function (which Python
+    # otherwise treats as locals due to the assignment).
+    seed = RANDOM_SEED if args.seed is None else args.seed
+    globals()["RANDOM_SEED"] = seed
+    np.random.seed(seed)
 
     is_smoke    = args.smoke
     n_folds     = 1 if is_smoke else args.folds
@@ -240,8 +258,20 @@ def main():
                                   global_stats_v8=global_stats_v6,
                                   raw_df=raw_df)
 
+    test_path = args.test_path or TEST_PATH
     raw_train = pd.read_csv(TRAIN_PATH)
-    raw_test  = pd.read_csv(TEST_PATH)
+    raw_test  = pd.read_csv(test_path)
+    if args.include_old_test:
+        old_test = pd.read_csv(args.include_old_test)
+        n_before = len(raw_train)
+        required_cols = list(raw_train.columns)
+        missing_cols = [c for c in required_cols if c not in old_test.columns]
+        if missing_cols:
+            raise ValueError(f"old test missing columns: {missing_cols}")
+        raw_train = pd.concat([raw_train, old_test[required_cols]], ignore_index=True)
+        print(f"  [include-old-test] Added {len(raw_train) - n_before} rows from "
+              f"{args.include_old_test} ({old_test['rally_uid'].nunique()} rallies, "
+              f"{old_test['match'].nunique()} matches)")
     train_df, test_df, _ = clean_data(raw_train, raw_test)
     test_df["serverGetPoint"] = -1
 

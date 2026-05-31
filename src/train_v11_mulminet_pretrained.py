@@ -1,21 +1,39 @@
-"""V11 Transformer — Clean GPU sequence model for ping-pong prediction.
+"""V11 Transformer + MuLMINet auxiliary-task loss (R-018).
+
+Cloned from train_v11_transformer.py 2026-05-11. Adds 4 auxiliary heads
+predicting next-shot's handId/strengthId/spinId/positionId, jointly
+trained with the main action/point/SGP heads.
+
+Per RESEARCH_NOTES.md (R-018), based on MuLMINet (Wu et al., IJCAI
+CoachAI Challenge 2023, 2nd place; arXiv 2307.08262; code at
+https://github.com/stan5dard/IJCAI-CoachAI-Challenge-2023). Adapted
+to our 0.4/0.4/0.2 weighted scoring:
+
+  L = 0.4·L_action + 0.4·L_point + 0.2·L_SGP + λ·Σ aux_losses
+    where aux ∈ {handId, strengthId, spinId, positionId}
+
+λ as single tunable hyperparameter (default 0.2). Aux losses use
+unweighted CE with `ignore_index=0` (mask "missing" / "no info" rows).
+
+For test-history aug rows (is_aug=1): aux losses ARE applied (test
+shots' hand/strength/spin/position are observable). Only SGP loss is
+masked for aug rows (V11 P6 server-mask, unchanged).
+
+CLI extensions vs train_v11_transformer.py:
+  --aux-lambda FLOAT  (default 0.2) — weight on aux losses
+  --max-folds N       (default 0)   — run only first N folds (R-011 pattern)
 
 Architecture:
   - Per-shot embedding: learned categoricals + numerical projection → d_model
-  - Bidirectional Transformer encoder (no causal mask; all context shots
-    are in the PAST relative to the target shot, so full attention is fine)
-  - Last-position representation → ActionId head (15-class) + PointId head (10-class)
+  - Bidirectional Transformer encoder (no causal mask)
+  - Last-position representation → main heads (action 15, point 10) + 4 aux heads
   - Mean-pool representation  → ServerGetPoint head (binary)
-  - Multi-task Focal loss with class weights
+  - Multi-task Focal loss (main) + CE (aux) with `ignore_index=0`
 
-Key fixes (vs existing transformer files):
+Key fixes inherited from V11:
   - Correct 15-class action macro F1 (serve classes 15-18 never appear as targets)
   - y_action clipped to 0-14
   - Hand-flip sequence augmentation (mirrors FH↔BH in context shots)
-
-Output:
-  - OOF predictions saved as .npy files for blending with V10 GBM
-  - Submission CSV: submissions/submission_v11_transformer.csv
 """
 
 import sys, os, time, warnings, argparse, gc
@@ -47,6 +65,13 @@ N_ACTION_TRAIN = 15    # classes 0-14 only as next-shot targets
 N_POINT        = 10
 ACTION_EVAL_LABELS = list(range(15))
 POINT_EVAL_LABELS  = list(range(10))
+
+# MuLMINet aux head class counts (size to max possible value + 1).
+# Aux losses use ignore_index=0, so class 0 ("missing"/"none") is masked.
+N_HAND     = 3   # {0=none/miss, 1=FH, 2=BH}
+N_STRENGTH = 4   # {0=none, 1=strong, 2=mid, 3=weak}
+N_SPIN     = 6   # {0=none, 1=upspin, 2=downspin, 3=no-spin, 4=side-up, 5=side-down}
+N_POSITION = 4   # {0=none, 1=left, 2=mid, 3=right}
 
 # Flip map: FH↔BH in sequence features
 # For context shots: handId 1↔2, positionId 1↔3, pointId 1↔3, 4↔6, 7↔9
@@ -164,6 +189,12 @@ def build_samples(raw_df: pd.DataFrame, is_train: bool, n_players: int = 200) ->
                 y_s = int(server_gp[tgt])
                 nsn = int(sn[tgt])
 
+                # MuLMINet aux targets — categorical fields of the target shot
+                y_hand     = int(hand_id[tgt])     # 0..2 (0 = missing/none)
+                y_strength = int(strength[tgt])    # 0..3 (0 = none)
+                y_spin     = int(spin[tgt])        # 0..5 (0 = no spin)
+                y_pos      = int(pos_id[tgt])      # 0..3 (0 = none)
+
                 samples.append({
                     "cat_seq":   cat_seq,
                     "num_seq":   num_seq,
@@ -173,6 +204,10 @@ def build_samples(raw_df: pd.DataFrame, is_train: bool, n_players: int = 200) ->
                     "y_action":  y_a,
                     "y_point":   y_p,
                     "y_server":  y_s,
+                    "y_hand":     y_hand,
+                    "y_strength": y_strength,
+                    "y_spin":     y_spin,
+                    "y_position": y_pos,
                     "next_sn":   nsn,
                     "rally_uid": uid,
                     "match_id":  match_id,
@@ -215,6 +250,10 @@ def build_samples(raw_df: pd.DataFrame, is_train: bool, n_players: int = 200) ->
                 "y_action":  0,   # placeholder — unknown at test time
                 "y_point":   0,   # placeholder
                 "y_server":  0,   # placeholder
+                "y_hand":     0,  # placeholder (aux losses ignore_index=0 → masked anyway)
+                "y_strength": 0,
+                "y_spin":     0,
+                "y_position": 0,
                 "next_sn":   nsn,
                 "rally_uid": uid,
                 "match_id":  match_id,
@@ -240,6 +279,11 @@ def flip_sample(s: dict) -> dict:
     flipped = dict(s)
     flipped["cat_seq"]  = cs
     flipped["y_point"]  = POINT_FLIP.get(int(s["y_point"]), int(s["y_point"]))
+    # MuLMINet aux targets: flip handId and positionId for the target shot too.
+    # handId 1↔2, positionId 1↔3. strengthId / spinId are not direction-specific.
+    flipped["y_hand"]     = HAND_FLIP.get(int(s["y_hand"]), int(s["y_hand"]))
+    flipped["y_position"] = POS_FLIP.get(int(s["y_position"]), int(s["y_position"]))
+    # y_strength, y_spin unchanged
     return flipped
 
 
@@ -279,6 +323,12 @@ class RallyDataset(Dataset):
             "y_action": torch.tensor(s["y_action"], dtype=torch.long),
             "y_point":  torch.tensor(s["y_point"],  dtype=torch.long),
             "y_server": torch.tensor(s["y_server"], dtype=torch.float),
+            # MuLMINet aux targets (R-018). ignore_index=0 in CE → "missing"/"none" rows
+            # contribute zero gradient.
+            "y_hand":     torch.tensor(int(s.get("y_hand",     0)), dtype=torch.long),
+            "y_strength": torch.tensor(int(s.get("y_strength", 0)), dtype=torch.long),
+            "y_spin":     torch.tensor(int(s.get("y_spin",     0)), dtype=torch.long),
+            "y_position": torch.tensor(int(s.get("y_position", 0)), dtype=torch.long),
             # is_aug=1 → row came from data/test_history_pairs.parquet (SGP=-1 placeholder).
             # Server head MUST mask these rows out of BCE (Codex requirement, P6).
             "is_aug":   torch.tensor(int(s.get("is_aug", 0)), dtype=torch.long),
@@ -352,8 +402,19 @@ class RallyTransformer(nn.Module):
             nn.Linear(d_model // 2, 1),
         )
 
-    def forward(self, cat, num, context, pid_self, pid_other, pad_mask, seq_len,
-                extract_embeddings: bool = False):
+        # MuLMINet aux heads (R-018) — small linear heads on last_repr.
+        # Kept smaller than main heads (no MLP, just LN+linear) to keep param
+        # overhead minimal (~5K total).
+        self.hand_head     = nn.Sequential(
+            nn.LayerNorm(d_model), nn.Linear(d_model, N_HAND))
+        self.strength_head = nn.Sequential(
+            nn.LayerNorm(d_model), nn.Linear(d_model, N_STRENGTH))
+        self.spin_head     = nn.Sequential(
+            nn.LayerNorm(d_model), nn.Linear(d_model, N_SPIN))
+        self.position_head = nn.Sequential(
+            nn.LayerNorm(d_model), nn.Linear(d_model, N_POSITION))
+
+    def forward(self, cat, num, context, pid_self, pid_other, pad_mask, seq_len):
         """
         cat      : (B, L, 7)    int64
         num      : (B, L, 4)    float32
@@ -362,13 +423,7 @@ class RallyTransformer(nn.Module):
         pid_other: (B,)         int64
         pad_mask : (B, L)       bool   True = padding
         seq_len  : (B,)         int64
-        extract_embeddings : if True, return (logits..., last_repr, pool_repr).
-                             last_repr (B, d) feeds action+point heads;
-                             pool_repr (B, d) feeds server head. Used by R-082.
-
-        Returns:
-          if extract_embeddings=False (default): action_logits, point_logits, server_logit
-          if extract_embeddings=True : action_logits, point_logits, server_logit, last_repr, pool_repr
+        Returns action_logits (B,15), point_logits (B,10), server_logit (B,)
         """
         B, L = cat.shape[:2]
 
@@ -411,15 +466,20 @@ class RallyTransformer(nn.Module):
         action_logits = self.action_head(last_repr)               # (B, 15)
         point_logits  = self.point_head(last_repr)                # (B, 10)
 
+        # MuLMINet aux logits (R-018) — from same last_repr.
+        hand_logits     = self.hand_head(last_repr)               # (B, N_HAND)
+        strength_logits = self.strength_head(last_repr)           # (B, N_STRENGTH)
+        spin_logits     = self.spin_head(last_repr)               # (B, N_SPIN)
+        position_logits = self.position_head(last_repr)           # (B, N_POSITION)
+
         # Server: mean-pool over real (non-padded) positions
         # Mask padded positions before pooling
         real_mask = (~pad_mask).float().unsqueeze(-1)             # (B, L, 1)
         pool_repr = (x * real_mask).sum(dim=1) / real_mask.sum(dim=1).clamp(min=1)
         server_logit = self.server_head(pool_repr).squeeze(-1)    # (B,)
 
-        if extract_embeddings:
-            return action_logits, point_logits, server_logit, last_repr, pool_repr
-        return action_logits, point_logits, server_logit
+        return (action_logits, point_logits, server_logit,
+                hand_logits, strength_logits, spin_logits, position_logits)
 
 
 # ─── Focal Loss ──────────────────────────────────────────────────────────────
@@ -463,10 +523,19 @@ def apply_action_rules(probs, next_sns):
 
 # ─── Training helpers ─────────────────────────────────────────────────────────
 
-def train_epoch(model, loader, optimizer, scaler, act_loss_fn, pt_loss_fn):
+def train_epoch(model, loader, optimizer, scaler, act_loss_fn, pt_loss_fn,
+                 aux_lambda=0.2):
+    """MuLMINet training step. aux_lambda weights the sum of 4 aux CE losses.
+
+    Aux loss CE uses ignore_index=0 to mask "missing"/"none" rows; reduction
+    is mean over non-ignored entries (per torch default).
+    """
     model.train()
     total_loss = 0.0
     n = 0
+    # Per-task running totals for monitoring
+    sums = {"a": 0.0, "p": 0.0, "s": 0.0,
+            "hand": 0.0, "strength": 0.0, "spin": 0.0, "position": 0.0}
     # P6 diagnostics:
     aug_rows_seen          = 0  # aug rows processed by the model this epoch
     aug_rows_in_server_loss = 0  # MUST stay 0 (Codex requirement)
@@ -481,13 +550,21 @@ def train_epoch(model, loader, optimizer, scaler, act_loss_fn, pt_loss_fn):
         ya   = batch["y_action"].to(DEVICE)
         yp   = batch["y_point"].to(DEVICE)
         ys   = batch["y_server"].to(DEVICE)
+        y_h  = batch["y_hand"].to(DEVICE)
+        y_st = batch["y_strength"].to(DEVICE)
+        y_sp = batch["y_spin"].to(DEVICE)
+        y_po = batch["y_position"].to(DEVICE)
         is_aug = batch["is_aug"].to(DEVICE)   # 0 = real train row, 1 = test-history aug
 
         optimizer.zero_grad(set_to_none=True)
         with autocast():
-            a_logits, p_logits, s_logit = model(cat, num, ctx, ps, po, mask, slen)
+            (a_logits, p_logits, s_logit,
+             h_logits, st_logits, sp_logits, po_logits) = model(
+                cat, num, ctx, ps, po, mask, slen)
+
             loss_a = act_loss_fn(a_logits, ya)
             loss_p = pt_loss_fn(p_logits, yp)
+
             # P6 server-mask: aug rows have y_server=-1 placeholder; restrict BCE to non-aug.
             real_mask = (is_aug == 0)
             n_real = int(real_mask.sum().item())
@@ -496,7 +573,23 @@ def train_epoch(model, loader, optimizer, scaler, act_loss_fn, pt_loss_fn):
                     s_logit[real_mask], ys[real_mask])
             else:
                 loss_s = torch.zeros((), device=DEVICE)
-            loss   = 0.4 * loss_a + 0.4 * loss_p + 0.2 * loss_s
+
+            # MuLMINet aux losses (R-018) — unweighted CE with ignore_index=0.
+            # NOTE: aux losses ARE applied to aug rows (test shots' hand/spin/etc
+            # are observable; only SGP is masked above per V11 P6).
+            loss_hand     = F.cross_entropy(h_logits,  y_h,  ignore_index=0)
+            loss_strength = F.cross_entropy(st_logits, y_st, ignore_index=0)
+            loss_spin     = F.cross_entropy(sp_logits, y_sp, ignore_index=0)
+            loss_position = F.cross_entropy(po_logits, y_po, ignore_index=0)
+            # Replace any NaN (all-ignored batch → mean over zero) with 0.
+            loss_hand     = torch.nan_to_num(loss_hand,     nan=0.0)
+            loss_strength = torch.nan_to_num(loss_strength, nan=0.0)
+            loss_spin     = torch.nan_to_num(loss_spin,     nan=0.0)
+            loss_position = torch.nan_to_num(loss_position, nan=0.0)
+            loss_aux_sum = (loss_hand + loss_strength + loss_spin + loss_position)
+
+            loss = (0.4 * loss_a + 0.4 * loss_p + 0.2 * loss_s
+                     + aux_lambda * loss_aux_sum)
 
         n_aug_batch = int((is_aug == 1).sum().item())
         aug_rows_seen += n_aug_batch
@@ -511,14 +604,23 @@ def train_epoch(model, loader, optimizer, scaler, act_loss_fn, pt_loss_fn):
         scaler.step(optimizer)
         scaler.update()
         total_loss += loss.item()
+        sums["a"] += float(loss_a.item());        sums["p"] += float(loss_p.item())
+        sums["s"] += float(loss_s.item())
+        sums["hand"]     += float(loss_hand.item())
+        sums["strength"] += float(loss_strength.item())
+        sums["spin"]     += float(loss_spin.item())
+        sums["position"] += float(loss_position.item())
         n += 1
 
-    return total_loss / max(n, 1), aug_rows_seen, aug_rows_in_server_loss
+    means = {k: v / max(n, 1) for k, v in sums.items()}
+    return total_loss / max(n, 1), aug_rows_seen, aug_rows_in_server_loss, means
 
 
 @torch.no_grad()
 def evaluate(model, loader, device=DEVICE):
-    """Run inference and return (act_probs, pt_probs, srv_probs) as numpy arrays."""
+    """Run inference and return (act_probs, pt_probs, srv_probs) as numpy arrays.
+    Aux logits are computed but discarded (we only blend / submit main heads).
+    """
     model.eval()
     act_list, pt_list, srv_list = [], [], []
     for batch in loader:
@@ -531,7 +633,9 @@ def evaluate(model, loader, device=DEVICE):
         slen = batch["seq_len"].to(device)
 
         with autocast():
-            a_logits, p_logits, s_logit = model(cat, num, ctx, ps, po, mask, slen)
+            outputs = model(cat, num, ctx, ps, po, mask, slen)
+            # MuLMINet model returns 7 tensors: (action, point, server, hand, strength, spin, position)
+            a_logits = outputs[0]; p_logits = outputs[1]; s_logit = outputs[2]
 
         act_list.append(F.softmax(a_logits.float(), dim=-1).cpu().numpy())
         pt_list.append( F.softmax(p_logits.float(), dim=-1).cpu().numpy())
@@ -547,7 +651,14 @@ def evaluate(model, loader, device=DEVICE):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--smoke",          action="store_true")
-    parser.add_argument("--tag",            type=str, default="v11")
+    parser.add_argument("--tag",            type=str, default="v11_mulminet_pretrained")
+    parser.add_argument("--aux-lambda",     type=float, default=0.2,
+                        help="(R-018) MuLMINet aux-loss weight.")
+    parser.add_argument("--load-pretrained", type=str, default=None,
+                        help="(R-021) Path to pretrained badminton encoder weights "
+                             "(produced by train_pretrain_badminton.py). When set, "
+                             "transformer + pos_emb + shot_proj weights are loaded "
+                             "as initialization; all other layers re-initialized.")
     parser.add_argument("--folds",          type=int, default=N_FOLDS)
     parser.add_argument("--max-folds",      type=int, default=0,
                         help="If > 0, run only the first N folds (full-epoch). "
@@ -572,26 +683,6 @@ def main():
     parser.add_argument("--test-path",      type=str, default=None,
                         help="Override TEST_PATH (e.g. data/test_new.csv after the "
                              "2026-05-06 LB reset). Default: config TEST_PATH.")
-    parser.add_argument("--include-old-test", type=str, default=None,
-                        help="(NEW 2026-05-13) Path to old test.csv to include as "
-                             "additional training data. Per AICUP organizers' "
-                             "2026-05-13 announcement. Concatenated rows have full "
-                             "labels (including real SGP) and participate in normal "
-                             "training (NOT is_aug=1).")
-    parser.add_argument("--save-checkpoint", action="store_true",
-                        help="(R-082 Phase 2) Save best per-fold model state_dict to "
-                             "models/{tag}_fold{f}.pt after best-state restore. Used "
-                             "for V11 embedding extraction.")
-    parser.add_argument("--fold-only", type=int, default=-1,
-                        help="(R-082 Phase 2 split) Run ONLY this fold index "
-                             "(0-based). Useful to fit Kaggle 12h kernel limit. "
-                             "Default -1 = all folds.")
-    parser.add_argument("--min-sn-train", type=int, default=0,
-                        help="(R-202 long-rally specialist) Train ONLY on target "
-                             "shots with strikeNumber >= this value. Filters the "
-                             "per-fold TRAIN indices only; VAL/OOF stays full so "
-                             "OOF remains globally aligned for blending. Test "
-                             "inference is unaffected (all rows). Default 0 = off.")
     args = parser.parse_args()
 
     is_smoke = args.smoke
@@ -619,21 +710,6 @@ def main():
     raw_train = pd.read_csv(TRAIN_PATH)
     test_path = args.test_path or TEST_PATH
     raw_test  = pd.read_csv(test_path)
-    if args.include_old_test:
-        old_test = pd.read_csv(args.include_old_test)
-        n_before = len(raw_train)
-        required_cols = ["rally_uid", "match", "strikeNumber", "actionId", "pointId",
-                         "serverGetPoint", "gamePlayerId", "gamePlayerOtherId",
-                         "strikeId", "handId", "strengthId", "spinId", "positionId",
-                         "sex", "numberGame", "rally_id", "scoreSelf", "scoreOther"]
-        missing_cols = [c for c in required_cols if c not in old_test.columns]
-        if missing_cols:
-            raise ValueError(f"old test missing columns: {missing_cols}")
-        raw_train = pd.concat([raw_train, old_test[required_cols]], ignore_index=True)
-        print(f"  [include-old-test] Added {len(raw_train) - n_before} rows from "
-              f"{args.include_old_test} ({old_test['rally_uid'].nunique()} rallies, "
-              f"{old_test['match'].nunique()} matches)")
-        print(f"  Total train rows: {n_before} -> {len(raw_train)}")
     train_df, test_df, player_map = clean_data(raw_train, raw_test)
     test_df["serverGetPoint"] = -1
     n_players = len(player_map)
@@ -748,23 +824,10 @@ def main():
                               num_workers=0, pin_memory=True)
 
     for fold, (tr_idx, val_idx) in enumerate(splits):
-        # R-082 Phase 2 split: skip all folds except the requested one
-        if args.fold_only >= 0 and fold != args.fold_only:
-            print(f"\n  --fold-only={args.fold_only}: SKIP fold {fold}")
-            continue
         t_fold = time.time()
         print(f"\n{'='*60}")
         print(f"  FOLD {fold+1}/{len(splits)}")
         print(f"{'='*60}")
-
-        # R-202 long-rally specialist: restrict TRAIN indices to SN>=min_sn_train.
-        # VAL/OOF (val_idx) is left full so OOF stays globally aligned for blending,
-        # and test inference uses all rows.
-        if args.min_sn_train > 0:
-            n_before = len(tr_idx)
-            tr_idx = tr_idx[nsn_all[tr_idx] >= args.min_sn_train]
-            print(f"  [R-202 min-sn-train={args.min_sn_train}] train rows "
-                  f"{n_before} -> {len(tr_idx)} (kept SN>={args.min_sn_train})")
 
         # P6: append all aug indices to this fold's training set. Aug rows are
         # is_aug=1; train_epoch masks them out of server BCE.
@@ -787,6 +850,34 @@ def main():
             dropout=0.15, n_players=n_players + 5, max_len=40
         ).to(DEVICE)
 
+        # R-021 — load pretrained badminton encoder weights if specified.
+        # Per Codex P1.3: ENCODER ONLY (transformer + pos_emb + shot_proj
+        # if shapes match); heads / player_emb / aux_heads stay random init.
+        if args.load_pretrained:
+            ckpt = torch.load(args.load_pretrained, map_location=DEVICE)
+            pretrained = ckpt.get("transferable_state_dict", ckpt)
+            model_state = model.state_dict()
+            loaded_keys = []; skipped_keys = []
+            for k, v in pretrained.items():
+                if k in model_state and model_state[k].shape == v.shape:
+                    model_state[k] = v
+                    loaded_keys.append(k)
+                else:
+                    skipped_keys.append((k, str(v.shape),
+                                          str(model_state[k].shape) if k in model_state else "MISSING"))
+            model.load_state_dict(model_state)
+            n_loaded_params = sum(model_state[k].numel() for k in loaded_keys)
+            print(f"  [R-021] Loaded {len(loaded_keys)}/{len(pretrained)} pretrained "
+                  f"keys ({n_loaded_params/1e6:.2f}M params) from {args.load_pretrained}")
+            if skipped_keys:
+                print(f"  [R-021] Skipped {len(skipped_keys)} keys (shape mismatch / missing):")
+                for k, ps, ms in skipped_keys[:5]:
+                    print(f"    {k}: pretrained={ps} vs model={ms}")
+            # Audit: confirm at least transformer.* loaded
+            n_transformer_loaded = sum(1 for k in loaded_keys if k.startswith("transformer."))
+            assert n_transformer_loaded > 0, \
+                "VIOLATION (R-021): no transformer.* weights loaded — pretrained transfer failed"
+
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
                                        weight_decay=1e-2, eps=1e-8)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -799,8 +890,9 @@ def main():
         wait      = 0
 
         for epoch in range(1, n_epochs + 1):
-            tr_loss, aug_seen, aug_in_srv = train_epoch(
-                model, tr_loader, optimizer, scaler, act_loss_fn, pt_loss_fn)
+            tr_loss, aug_seen, aug_in_srv, loss_means = train_epoch(
+                model, tr_loader, optimizer, scaler, act_loss_fn, pt_loss_fn,
+                aux_lambda=args.aux_lambda)
             scheduler.step()
             if aug_in_srv != 0:
                 # Hard fail loud — this would silently poison the SGP head.
@@ -810,7 +902,11 @@ def main():
             # excluded from server BCE.
             if epoch == 1 or epoch % 5 == 0:
                 print(f"  Ep{epoch:3d} aug_rows_seen={aug_seen}  "
-                      f"aug_rows_in_server_loss={aug_in_srv}")
+                      f"aug_rows_in_server_loss={aug_in_srv}  "
+                      f"loss_a={loss_means['a']:.3f} loss_p={loss_means['p']:.3f} "
+                      f"loss_s={loss_means['s']:.3f}  "
+                      f"aux_h={loss_means['hand']:.3f} aux_str={loss_means['strength']:.3f} "
+                      f"aux_sp={loss_means['spin']:.3f} aux_pos={loss_means['position']:.3f}")
 
             # Validate every 5 epochs (saves time)
             if epoch % 5 == 0 or epoch == n_epochs:
@@ -842,25 +938,6 @@ def main():
         # Restore best checkpoint
         model.load_state_dict({k: v.to(DEVICE) for k, v in best_state.items()})
         model.eval()
-
-        # R-082 Phase 2: save checkpoint to disk for embedding extraction
-        if args.save_checkpoint:
-            ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     "..", "models")
-            os.makedirs(ckpt_dir, exist_ok=True)
-            ckpt_path = os.path.join(ckpt_dir, f"{out_tag}_fold{fold}.pt")
-            torch.save({
-                "state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
-                "fold": fold,
-                "tag": out_tag,
-                "best_ov": float(best_ov),
-                "arch_config": {
-                    "d_model": d_model, "n_heads": n_heads, "n_layers": n_layers,
-                    "n_players": n_players + 5, "max_len": 40, "dropout": 0.15,
-                },
-                "epoch_count": epoch,
-            }, ckpt_path)
-            print(f"  Saved checkpoint: {ckpt_path}")
 
         # Final val evaluation
         a_p, p_p, s_p = evaluate(model, val_loader)

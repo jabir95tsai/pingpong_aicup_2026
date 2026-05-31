@@ -1,21 +1,36 @@
-"""V11 Transformer — Clean GPU sequence model for ping-pong prediction.
+"""V11 Transformer + Kendall & Gal uncertainty-weighted MTL (R-019).
 
-Architecture:
-  - Per-shot embedding: learned categoricals + numerical projection → d_model
-  - Bidirectional Transformer encoder (no causal mask; all context shots
-    are in the PAST relative to the target shot, so full attention is fine)
-  - Last-position representation → ActionId head (15-class) + PointId head (10-class)
-  - Mean-pool representation  → ServerGetPoint head (binary)
-  - Multi-task Focal loss with class weights
+Cloned from train_v11_transformer.py 2026-05-11. Replaces fixed 0.4/0.4/0.2
+multi-task weighting with learnable per-task log-variance parameters per
+Kendall & Gal (CVPR 2018) "Multi-Task Learning Using Uncertainty to Weigh
+Losses for Scene Geometry and Semantics" (arXiv 1705.07115).
 
-Key fixes (vs existing transformer files):
-  - Correct 15-class action macro F1 (serve classes 15-18 never appear as targets)
-  - y_action clipped to 0-14
-  - Hand-flip sequence augmentation (mirrors FH↔BH in context shots)
+Loss formulation:
+  L = Σ_i ( (1/(2·exp(s_i))) · L_i + 0.5·s_i )
 
-Output:
-  - OOF predictions saved as .npy files for blending with V10 GBM
-  - Submission CSV: submissions/submission_v11_transformer.csv
+where s_i = log(σ_i²) is a learnable scalar parameter per task. The
++0.5·s_i regularizer prevents the model from driving s_i → ∞ (which would
+zero out the task gradient).
+
+Effective weight for task i: w_i = 1 / (2 · exp(s_i))
+  s_i = 0   → w_i = 0.5     (uniform start)
+  s_i < 0   → w_i > 0.5     (task emphasized)
+  s_i > 0   → w_i < 0.5     (task de-emphasized)
+
+For our 3 supervised tasks (action, point, server), we learn 3 log-vars.
+Initial values: s_i = 0.0 (all tasks equally weighted at start; matches
+the literature's recommended init).
+
+After training, the printed final s_i values reveal which tasks the
+model decided to emphasize. Expected: server head (weakest task) should
+likely get LOWER s_i (more weight).
+
+CLI extensions vs train_v11_transformer.py:
+  --max-folds N (already exists)
+  --init-log-var FLOAT (default 0.0) — initial value for s_action, s_point, s_server
+
+This is the SIMPLEST literature-recommended MTL technique. ~10 lines of
+PyTorch added. Targets our weak SGP head (AUC ~0.56 on Fold-1).
 """
 
 import sys, os, time, warnings, argparse, gc
@@ -352,8 +367,15 @@ class RallyTransformer(nn.Module):
             nn.Linear(d_model // 2, 1),
         )
 
-    def forward(self, cat, num, context, pid_self, pid_other, pad_mask, seq_len,
-                extract_embeddings: bool = False):
+        # R-019 Kendall & Gal uncertainty-weighted MTL: 3 learnable log-variance
+        # scalars (one per task). Initialised to 0 (uniform weight 0.5 per task).
+        # During training: w_i = 1/(2·exp(s_i)); regulariser +0.5·s_i prevents
+        # s_i → ∞ collapse.
+        self.log_var_action = nn.Parameter(torch.zeros(()))
+        self.log_var_point  = nn.Parameter(torch.zeros(()))
+        self.log_var_server = nn.Parameter(torch.zeros(()))
+
+    def forward(self, cat, num, context, pid_self, pid_other, pad_mask, seq_len):
         """
         cat      : (B, L, 7)    int64
         num      : (B, L, 4)    float32
@@ -362,13 +384,7 @@ class RallyTransformer(nn.Module):
         pid_other: (B,)         int64
         pad_mask : (B, L)       bool   True = padding
         seq_len  : (B,)         int64
-        extract_embeddings : if True, return (logits..., last_repr, pool_repr).
-                             last_repr (B, d) feeds action+point heads;
-                             pool_repr (B, d) feeds server head. Used by R-082.
-
-        Returns:
-          if extract_embeddings=False (default): action_logits, point_logits, server_logit
-          if extract_embeddings=True : action_logits, point_logits, server_logit, last_repr, pool_repr
+        Returns action_logits (B,15), point_logits (B,10), server_logit (B,)
         """
         B, L = cat.shape[:2]
 
@@ -417,8 +433,6 @@ class RallyTransformer(nn.Module):
         pool_repr = (x * real_mask).sum(dim=1) / real_mask.sum(dim=1).clamp(min=1)
         server_logit = self.server_head(pool_repr).squeeze(-1)    # (B,)
 
-        if extract_embeddings:
-            return action_logits, point_logits, server_logit, last_repr, pool_repr
         return action_logits, point_logits, server_logit
 
 
@@ -464,6 +478,11 @@ def apply_action_rules(probs, next_sns):
 # ─── Training helpers ─────────────────────────────────────────────────────────
 
 def train_epoch(model, loader, optimizer, scaler, act_loss_fn, pt_loss_fn):
+    """R-019 Kendall & Gal uncertainty-weighted MTL.
+
+    Loss per task: (1/(2·exp(s_i))) · L_i + 0.5·s_i
+    where s_i is model.log_var_{action,point,server} (learnable).
+    """
     model.train()
     total_loss = 0.0
     n = 0
@@ -496,7 +515,14 @@ def train_epoch(model, loader, optimizer, scaler, act_loss_fn, pt_loss_fn):
                     s_logit[real_mask], ys[real_mask])
             else:
                 loss_s = torch.zeros((), device=DEVICE)
-            loss   = 0.4 * loss_a + 0.4 * loss_p + 0.2 * loss_s
+
+            # R-019 Kendall & Gal uncertainty weighting.
+            # log_var_i is learnable; precision_i = exp(-s_i); regulariser 0.5·s_i.
+            sa = model.log_var_action; sp = model.log_var_point; ss = model.log_var_server
+            loss_a_w = 0.5 * torch.exp(-sa) * loss_a + 0.5 * sa
+            loss_p_w = 0.5 * torch.exp(-sp) * loss_p + 0.5 * sp
+            loss_s_w = 0.5 * torch.exp(-ss) * loss_s + 0.5 * ss
+            loss = loss_a_w + loss_p_w + loss_s_w
 
         n_aug_batch = int((is_aug == 1).sum().item())
         aug_rows_seen += n_aug_batch
@@ -547,7 +573,7 @@ def evaluate(model, loader, device=DEVICE):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--smoke",          action="store_true")
-    parser.add_argument("--tag",            type=str, default="v11")
+    parser.add_argument("--tag",            type=str, default="v11_uncertainty")
     parser.add_argument("--folds",          type=int, default=N_FOLDS)
     parser.add_argument("--max-folds",      type=int, default=0,
                         help="If > 0, run only the first N folds (full-epoch). "
@@ -572,26 +598,6 @@ def main():
     parser.add_argument("--test-path",      type=str, default=None,
                         help="Override TEST_PATH (e.g. data/test_new.csv after the "
                              "2026-05-06 LB reset). Default: config TEST_PATH.")
-    parser.add_argument("--include-old-test", type=str, default=None,
-                        help="(NEW 2026-05-13) Path to old test.csv to include as "
-                             "additional training data. Per AICUP organizers' "
-                             "2026-05-13 announcement. Concatenated rows have full "
-                             "labels (including real SGP) and participate in normal "
-                             "training (NOT is_aug=1).")
-    parser.add_argument("--save-checkpoint", action="store_true",
-                        help="(R-082 Phase 2) Save best per-fold model state_dict to "
-                             "models/{tag}_fold{f}.pt after best-state restore. Used "
-                             "for V11 embedding extraction.")
-    parser.add_argument("--fold-only", type=int, default=-1,
-                        help="(R-082 Phase 2 split) Run ONLY this fold index "
-                             "(0-based). Useful to fit Kaggle 12h kernel limit. "
-                             "Default -1 = all folds.")
-    parser.add_argument("--min-sn-train", type=int, default=0,
-                        help="(R-202 long-rally specialist) Train ONLY on target "
-                             "shots with strikeNumber >= this value. Filters the "
-                             "per-fold TRAIN indices only; VAL/OOF stays full so "
-                             "OOF remains globally aligned for blending. Test "
-                             "inference is unaffected (all rows). Default 0 = off.")
     args = parser.parse_args()
 
     is_smoke = args.smoke
@@ -619,21 +625,6 @@ def main():
     raw_train = pd.read_csv(TRAIN_PATH)
     test_path = args.test_path or TEST_PATH
     raw_test  = pd.read_csv(test_path)
-    if args.include_old_test:
-        old_test = pd.read_csv(args.include_old_test)
-        n_before = len(raw_train)
-        required_cols = ["rally_uid", "match", "strikeNumber", "actionId", "pointId",
-                         "serverGetPoint", "gamePlayerId", "gamePlayerOtherId",
-                         "strikeId", "handId", "strengthId", "spinId", "positionId",
-                         "sex", "numberGame", "rally_id", "scoreSelf", "scoreOther"]
-        missing_cols = [c for c in required_cols if c not in old_test.columns]
-        if missing_cols:
-            raise ValueError(f"old test missing columns: {missing_cols}")
-        raw_train = pd.concat([raw_train, old_test[required_cols]], ignore_index=True)
-        print(f"  [include-old-test] Added {len(raw_train) - n_before} rows from "
-              f"{args.include_old_test} ({old_test['rally_uid'].nunique()} rallies, "
-              f"{old_test['match'].nunique()} matches)")
-        print(f"  Total train rows: {n_before} -> {len(raw_train)}")
     train_df, test_df, player_map = clean_data(raw_train, raw_test)
     test_df["serverGetPoint"] = -1
     n_players = len(player_map)
@@ -748,23 +739,10 @@ def main():
                               num_workers=0, pin_memory=True)
 
     for fold, (tr_idx, val_idx) in enumerate(splits):
-        # R-082 Phase 2 split: skip all folds except the requested one
-        if args.fold_only >= 0 and fold != args.fold_only:
-            print(f"\n  --fold-only={args.fold_only}: SKIP fold {fold}")
-            continue
         t_fold = time.time()
         print(f"\n{'='*60}")
         print(f"  FOLD {fold+1}/{len(splits)}")
         print(f"{'='*60}")
-
-        # R-202 long-rally specialist: restrict TRAIN indices to SN>=min_sn_train.
-        # VAL/OOF (val_idx) is left full so OOF stays globally aligned for blending,
-        # and test inference uses all rows.
-        if args.min_sn_train > 0:
-            n_before = len(tr_idx)
-            tr_idx = tr_idx[nsn_all[tr_idx] >= args.min_sn_train]
-            print(f"  [R-202 min-sn-train={args.min_sn_train}] train rows "
-                  f"{n_before} -> {len(tr_idx)} (kept SN>={args.min_sn_train})")
 
         # P6: append all aug indices to this fold's training set. Aug rows are
         # is_aug=1; train_epoch masks them out of server BCE.
@@ -809,8 +787,17 @@ def main():
             # Print on epoch 1 + every 5 to confirm aug rows are flowing in but
             # excluded from server BCE.
             if epoch == 1 or epoch % 5 == 0:
+                # R-019: monitor learned log-vars per task
+                sa = float(model.log_var_action.detach().cpu())
+                sp = float(model.log_var_point.detach().cpu())
+                ss = float(model.log_var_server.detach().cpu())
+                wa = 1.0 / (2.0 * np.exp(sa))
+                wp = 1.0 / (2.0 * np.exp(sp))
+                ws = 1.0 / (2.0 * np.exp(ss))
                 print(f"  Ep{epoch:3d} aug_rows_seen={aug_seen}  "
-                      f"aug_rows_in_server_loss={aug_in_srv}")
+                      f"aug_rows_in_server_loss={aug_in_srv}  "
+                      f"log_vars=(a={sa:+.3f}, p={sp:+.3f}, s={ss:+.3f})  "
+                      f"weights=(a={wa:.3f}, p={wp:.3f}, s={ws:.3f})")
 
             # Validate every 5 epochs (saves time)
             if epoch % 5 == 0 or epoch == n_epochs:
@@ -842,25 +829,6 @@ def main():
         # Restore best checkpoint
         model.load_state_dict({k: v.to(DEVICE) for k, v in best_state.items()})
         model.eval()
-
-        # R-082 Phase 2: save checkpoint to disk for embedding extraction
-        if args.save_checkpoint:
-            ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     "..", "models")
-            os.makedirs(ckpt_dir, exist_ok=True)
-            ckpt_path = os.path.join(ckpt_dir, f"{out_tag}_fold{fold}.pt")
-            torch.save({
-                "state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
-                "fold": fold,
-                "tag": out_tag,
-                "best_ov": float(best_ov),
-                "arch_config": {
-                    "d_model": d_model, "n_heads": n_heads, "n_layers": n_layers,
-                    "n_players": n_players + 5, "max_len": 40, "dropout": 0.15,
-                },
-                "epoch_count": epoch,
-            }, ckpt_path)
-            print(f"  Saved checkpoint: {ckpt_path}")
 
         # Final val evaluation
         a_p, p_p, s_p = evaluate(model, val_loader)

@@ -13,7 +13,7 @@ features_v9 which adds 25 joint serve-receive prior features on top of V6:
 V12 also saves fold-aware OOF predictions for downstream slice analysis and
 blend with V11 transformer.
 """
-import sys, os, time, warnings, gc, argparse
+import sys, os, time, warnings, gc, argparse, json
 warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
@@ -98,6 +98,15 @@ def augment_flip(X, y_act, y_pt, y_srv, flip_pairs):
             np.concatenate([y_act, y_act]),
             np.concatenate([y_pt, y_pt_flip]),
             np.concatenate([y_srv, y_srv]))
+
+
+# NOTE 2026-05-23: A full-prefix expansion helper was considered as part of
+# Codex Tier 3 ("train full-prefix sequence expansion") but verified REDUNDANT:
+# features_v3.build_features_v3 (inherited by v5/v6/v9/v15feat) already iterates
+# `for target_idx in range(1, len(group))` per train rally, producing N-1
+# feature rows per rally with N shots. The standard 69712 OOF baseline IS the
+# full-prefix-expanded training set. The flag was removed from --argparse below
+# to avoid double-expansion.
 
 
 # ─── Threshold optimisation ───────────────────────────────────────────────────
@@ -214,6 +223,77 @@ def main():
     parser.add_argument("--seed",     type=int, default=RANDOM_SEED,
                         help=f"Global random seed (default: {RANDOM_SEED}). "
                              "Controls numpy, LGB, XGB, and CB random states.")
+    parser.add_argument("--test-path", type=str, default=None,
+                        help="Override TEST_PATH (e.g. data/test_new.csv after the "
+                             "2026-05-06 LB reset). Default: config TEST_PATH.")
+    parser.add_argument("--feature-set", type=str, default="v9",
+                        choices=["v9", "v9_recvhand", "v9_recvprofile",
+                                 "v15feat", "v15feat_b", "v15feat_c", "v15feat_d",
+                                 "v15feat_e", "v15feat_e_nomismatch",
+                                 "v16match", "v16match_v2"],
+                        help="Feature set: 'v9' (default, baseline), "
+                             "'v9_recvhand' (adds recv_hand_est, R-001), "
+                             "'v9_recvprofile' (R-011: v9 + recv_hand_est + "
+                             "4 receiver-mode axes; see features_v9_recvprofile.py), "
+                             "'v15feat' (R-029a: v9 + 36 prefix aggregate features — "
+                             "per-class freqs, entropy, dominance, streaks; "
+                             "see features_v15feat.py), "
+                             "'v15feat_b' (R-029b: v15feat + 33 empirical "
+                             "transition priors; see features_v15feat_b.py), or "
+                             "'v16match' (R-032: v15feat + 40 LORO cross-rally "
+                             "match-context features — attacks player de-id; see "
+                             "features_v16match.py).")
+    parser.add_argument("--recvprofile-axes", type=str,
+                        default="action,point,strength,spin",
+                        help="(R-011) Comma-separated subset of "
+                             "{action,point,strength,spin} for ablation. "
+                             "Only used when --feature-set v9_recvprofile.")
+    parser.add_argument("--max-folds", type=int, default=0,
+                        help="If > 0, run only the first N folds of the standard "
+                             "GroupKFold(--folds) partition with full epochs / "
+                             "n_boost. Used for stop-gate dry runs (R-002 R-011 "
+                             "pattern). Default 0 = run all --folds.")
+    parser.add_argument("--include-old-test", type=str, default=None,
+                        help="(NEW 2026-05-13) Path to old test.csv. Per AICUP "
+                             "organizers' announcement allowing old test as training data.")
+    parser.add_argument("--pseudo-parquet", type=str, default=None,
+                        help="Path to pseudo-label parquet (R-009 V1). When set, kept rows "
+                             "are appended to action/point training sets per --pseudo-mode. "
+                             "Pseudo rows are NEVER added to server training, NEVER flip-augmented, "
+                             "and NEVER appear in saved OOF arrays.")
+    parser.add_argument("--pseudo-mode", type=str, default="action_and_point",
+                        choices=["action_and_point", "action_only"],
+                        help="Pseudo-row policy. 'action_and_point' (V1a) uses pseudo "
+                             "for both action and point losses. 'action_only' (V1b, "
+                             "NOT approved by Codex 2026-05-10) uses pseudo for action "
+                             "only; point loss skips pseudo rows.")
+    parser.add_argument("--pseudo-weight", type=float, default=0.3,
+                        help="Flat sample weight for pseudo rows (Codex V1a: 0.3). NOT "
+                             "multiplied by ACTION_CW/POINT_CW; treated as absolute weight.")
+    # NOTE 2026-05-23: --full-prefix flag was considered but REVERTED. The existing
+    # features_v3.build_features_v3 (inherited by all downstream feature modules)
+    # already iterates `for target_idx in range(1, len(group))` per train rally,
+    # producing N-1 feature rows per rally with N shots. The 69712 OOF baseline
+    # IS the full-prefix-expanded training set. Adding a --full-prefix flag
+    # would double-expand (already-expanded features × synthetic truncations).
+    # ── R-203 (2026-05-29): Focal CE + Cui CB weights for ACTION models ───────
+    parser.add_argument("--r203-focal", action="store_true",
+                        help="(R-203) Replace LGB action objective with focal CE "
+                             "(gamma) using Cui et al. CB class weights. Only "
+                             "affects ACTION-task LGB model (XGB stays on CE). "
+                             "Removes sample-weight injection of ACTION_CW "
+                             "(class weighting now lives inside the focal alpha).")
+    parser.add_argument("--r203-gamma", type=float, default=2.0,
+                        help="(R-203) Focal exponent gamma (default: 2.0)")
+    parser.add_argument("--r203-cb-beta", type=float, default=0.999,
+                        help="(R-203) Cui CB beta hyperparameter (default: 0.999)")
+    parser.add_argument("--r203-boost-classes", type=str, default="1,5,6,13",
+                        help="(R-203) Comma-separated action class ids to apply "
+                             "additional focal-boost factor (default: 1,5,6,13 "
+                             "= Loop + push-family per spec).")
+    parser.add_argument("--r203-boost-factor", type=float, default=1.5,
+                        help="(R-203) Multiplicative boost for --r203-boost-classes "
+                             "(default 1.5)")
     args = parser.parse_args()
 
     is_smoke    = args.smoke
@@ -239,8 +319,125 @@ def main():
     import xgboost as xgb
     from catboost import CatBoostClassifier
     import lightgbm as lgb
-    from features_v9 import (compute_global_stats_v9, build_features_v9,
-                              get_feature_names_v9)
+    # R-203 imports (no-op unless --r203-focal)
+    from r203_focal_obj import (
+        cui_cb_weights, apply_focal_boost,
+        make_focal_multiclass_obj, make_focal_multiclass_eval,
+    )
+    if args.feature_set == "v9_recvhand":
+        from features_v9_recvhand import (
+            compute_global_stats_v9_recvhand as compute_global_stats_v9,
+            build_features_v9_recvhand as build_features_v9,
+            get_feature_names_v9_recvhand as get_feature_names_v9,
+        )
+        print("  Feature set: v9_recvhand (v9 + recv_hand_est)")
+    elif args.feature_set == "v9_recvside":
+        # R-211: v9 + recv_side_est (receiver's own prior point-SIDE mode).
+        # Stronger receiver-axis signal than recvhand's handId-mode proxy
+        # (probe side-spread +0.147). Prefix-only, within-rally, hard-rule clean.
+        from features_v9_recvside import (
+            compute_global_stats_v9_recvside as compute_global_stats_v9,
+            build_features_v9_recvside as build_features_v9,
+            get_feature_names_v9_recvside as get_feature_names_v9,
+        )
+        print("  Feature set: v9_recvside (v9 + recv_side_est, R-211)")
+    elif args.feature_set == "v9_recvprofile":
+        # R-011: set ablation axes via env var BEFORE module import.
+        os.environ["RECVPROFILE_AXES"] = args.recvprofile_axes
+        from features_v9_recvprofile import (
+            compute_global_stats_v9_recvprofile as compute_global_stats_v9,
+            build_features_v9_recvprofile as build_features_v9,
+            get_feature_names_v9_recvprofile as get_feature_names_v9,
+        )
+        print(f"  Feature set: v9_recvprofile (v9 + recv_hand_est + "
+              f"axes={args.recvprofile_axes})")
+    elif args.feature_set == "v15feat":
+        # R-029a: v9 + 36 prefix aggregate features (per-class freqs +
+        # entropy/dominance/streaks). Clean-room from teammate audit Batch A.
+        from features_v15feat import (
+            compute_global_stats_v15feat as compute_global_stats_v9,
+            build_features_v15feat as build_features_v9,
+            get_feature_names_v15feat as get_feature_names_v9,
+        )
+        print("  Feature set: v15feat (v9 + 36 prefix aggregates: per-class "
+              "freqs + entropy/dominance + tail streaks)")
+    elif args.feature_set == "v15feat_b":
+        # R-029b: v15feat + 33 empirical transition priors. Clean-room
+        # from teammate audit Batch B. Per-fold computation = leak-safe.
+        from features_v15feat_b import (
+            compute_global_stats_v15feat_b as compute_global_stats_v9,
+            build_features_v15feat_b as build_features_v9,
+            get_feature_names_v15feat_b as get_feature_names_v9,
+        )
+        print("  Feature set: v15feat_b (v15feat + 33 transition priors: "
+              "P(next_action|last_action,is_serve_side) + P(next_point|last_action,last_point))")
+    elif args.feature_set == "v15feat_c":
+        # R-047: v15feat_b + 8 teammate-v8 score-pressure features
+        # (is_serve_side, is_deuce, match_point_*, total_points,
+        # points_to_win_*, score_lead_abs). New B-feature subclass.
+        from features_v15feat_c import (
+            compute_global_stats_v15feat_c as compute_global_stats_v9,
+            build_features_v15feat_c as build_features_v9,
+            get_feature_names_v15feat_c as get_feature_names_v9,
+        )
+        print("  Feature set: v15feat_c (v15feat_b + 8 score-pressure features)")
+    elif args.feature_set == "v15feat_d":
+        # R-064 (Codex APPROVE_WITH_FIXES 2026-05-23): v15feat + 13 spin-aware
+        # features (5 smoothed spin priors α=20 + 4 last-spin physics flags +
+        # 4 serve_spin_class one-hot). User insight: position×action constrains
+        # next-shot spin, which physically constrains receiver's counter.
+        from features_v15feat_d import (
+            compute_global_stats_v15feat_d as compute_global_stats_v9,
+            build_features_v15feat_d as build_features_v9,
+            get_feature_names_v15feat_d as get_feature_names_v9,
+        )
+        print("  Feature set: v15feat_d (v15feat + 13 spin-aware features: "
+              "5 smoothed priors P(next_spin|last_act,last_pos) + 4 physics flags "
+              "+ 4 serve_spin_class one-hot)")
+    elif args.feature_set == "v15feat_e":
+        # R-070 (Codex APPROVE_WITH_FIXES 2026-05-24): v15feat + 7 neutral
+        # stroke-position movement features (mismatch proxy, 2D pointId
+        # side/depth decomposition + missingness flags, lateral gap, optional
+        # interaction). User intuition: cross-court reach + far follow-up =
+        # harder next shot.
+        from features_v15feat_e import (
+            compute_global_stats_v15feat_e as compute_global_stats_v9,
+            build_features_v15feat_e as build_features_v9,
+            get_feature_names_v15feat_e as get_feature_names_v9,
+        )
+        print("  Feature set: v15feat_e (v15feat + 7 neutral movement/position features)")
+    elif args.feature_set == "v15feat_e_nomismatch":
+        # R-070 ablation (Codex 2026-05-24): drop mismatch_proxy + interaction.
+        # Keep only 5 point side/depth/gap/missingness features. Tests if the
+        # SN≤2 regression in the 7-feature smoke came from the mismatch proxy.
+        from features_v15feat_e_nomismatch import (
+            compute_global_stats_v15feat_e_nomismatch as compute_global_stats_v9,
+            build_features_v15feat_e_nomismatch as build_features_v9,
+            get_feature_names_v15feat_e_nomismatch as get_feature_names_v9,
+        )
+        print("  Feature set: v15feat_e_nomismatch (v15feat + 5 point/gap/missingness features)")
+    elif args.feature_set == "v16match":
+        # R-032 v1 (Codex BLOCKED — use v16match_v2 instead).
+        from features_v16match import (
+            compute_global_stats_v16match as compute_global_stats_v9,
+            build_features_v16match as build_features_v9,
+            get_feature_names_v16match as get_feature_names_v9,
+        )
+        print("  Feature set: v16match v1 (Codex-BLOCKED; prefer v16match_v2)")
+    elif args.feature_set == "v16match_v2":
+        # R-032 v2 (Codex APPROVE_WITH_FIXES 2026-05-21):
+        # v9 + 33 LORO features grouped by (match, unordered_player_pair).
+        # Family C dropped from model features; prefix-cap K=3.
+        from features_v16match_v2 import (
+            compute_global_stats_v16match_v2 as compute_global_stats_v9,
+            build_features_v16match_v2 as build_features_v9,
+            get_feature_names_v16match_v2 as get_feature_names_v9,
+        )
+        print("  Feature set: v16match_v2 (v9 + 33 LORO match-pair features)")
+    else:
+        from features_v9 import (compute_global_stats_v9, build_features_v9,
+                                  get_feature_names_v9)
+        print("  Feature set: v9 (baseline)")
     # Wrappers so existing call sites that use v6 kwarg names still work
     compute_global_stats_v6 = compute_global_stats_v9
     get_feature_names_v6     = get_feature_names_v9
@@ -249,8 +446,19 @@ def main():
                                   global_stats_v9=global_stats_v6,
                                   raw_df=raw_df)
 
+    test_path = args.test_path or TEST_PATH
     raw_train = pd.read_csv(TRAIN_PATH)
-    raw_test  = pd.read_csv(TEST_PATH)
+    raw_test  = pd.read_csv(test_path)
+    if args.include_old_test:
+        old_test = pd.read_csv(args.include_old_test)
+        n_before = len(raw_train)
+        required_cols = list(raw_train.columns)
+        missing_cols = [c for c in required_cols if c not in old_test.columns]
+        if missing_cols:
+            raise ValueError(f"old test missing columns: {missing_cols}")
+        raw_train = pd.concat([raw_train, old_test[required_cols]], ignore_index=True)
+        print(f"  [include-old-test] Added {len(raw_train) - n_before} rows from {args.include_old_test} "
+              f"({old_test['rally_uid'].nunique()} rallies, {old_test['match'].nunique()} matches)")
     train_df, test_df, _ = clean_data(raw_train, raw_test)
     test_df["serverGetPoint"] = -1
 
@@ -283,6 +491,12 @@ def main():
     splits = list(gkf.split(np.arange(n_samples), groups=match_all))
     if is_smoke:
         splits = splits[:1]
+    elif args.max_folds and args.max_folds > 0:
+        # R-011 / R-002 pattern: run only the first N folds of the standard
+        # 5-fold GroupKFold partition (NOT a different partition). Full epochs.
+        splits = splits[:args.max_folds]
+        print(f"  --max-folds {args.max_folds} active: running first "
+              f"{len(splits)} of {n_folds} folds with full n_boost.")
 
     # Test feature matrix (ONE row per test rally)
     feat_test  = build_features_v6(test_df, is_train=False,
@@ -295,6 +509,61 @@ def main():
     test_act_acc = np.zeros((len(X_test), N_ACTION))
     test_pt_acc  = np.zeros((len(X_test), N_POINT))
     test_srv_acc = np.zeros(len(X_test))
+
+    # ── Pseudo-label loading (R-009 V1a, optional) ──────────────────────────
+    # Per Codex APPROVE_WITH_FIXES (2026-05-10):
+    #  - kept rows joined to feat_test inference rows by rally_uid
+    #  - server training EXCLUDES pseudo entirely
+    #  - flip-aug NEVER applied to pseudo rows
+    #  - OOF arrays MUST stay length n_samples (real train rows only)
+    pseudo_X       = None
+    pseudo_y_act   = None
+    pseudo_y_pt    = None
+    pseudo_act_p   = None
+    pseudo_pt_p    = None
+    n_pseudo       = 0
+    pseudo_mode    = args.pseudo_mode
+    pseudo_weight  = args.pseudo_weight
+    if args.pseudo_parquet:
+        print(f"\n--- Loading pseudo-label parquet ---")
+        print(f"  Path: {args.pseudo_parquet}")
+        pdf = pd.read_parquet(args.pseudo_parquet)
+        pdf_kept = pdf[pdf["kept"]].reset_index(drop=True)
+        n_pseudo = len(pdf_kept)
+        print(f"  Total parquet rows: {len(pdf)}  Kept rows: {n_pseudo}")
+        print(f"  Pseudo mode: {pseudo_mode}  Pseudo weight: {pseudo_weight}")
+        # Verify SGP sentinel
+        if "serverGetPoint" in pdf_kept.columns:
+            srv_vals = pdf_kept["serverGetPoint"].unique()
+            assert set(srv_vals.tolist()).issubset({-1}), \
+                f"Pseudo parquet has non-sentinel serverGetPoint values: {srv_vals}"
+            print(f"  serverGetPoint sentinel verified: all -1 ({len(srv_vals)} unique)")
+        # Verify manifest exists
+        manifest_path = args.pseudo_parquet + ".manifest.json"
+        if os.path.exists(manifest_path):
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            print(f"  Manifest loaded: teacher={manifest.get('teacher_submission')}")
+            print(f"  Manifest test_rally_uid_sha256: {manifest.get('test_rally_uid_sha256')}")
+        else:
+            print(f"  WARN: manifest not found at {manifest_path}")
+        # Build pseudo features by joining kept rows to feat_test
+        test_rally_to_idx = {r: i for i, r in enumerate(rally_test)}
+        missing = [r for r in pdf_kept["rally_uid"] if r not in test_rally_to_idx]
+        assert not missing, f"{len(missing)} pseudo rally_uids not in feat_test"
+        pseudo_idx = np.array([test_rally_to_idx[r] for r in pdf_kept["rally_uid"]])
+        pseudo_X    = X_test[pseudo_idx].astype(np.float32, copy=True)
+        pseudo_y_act = pdf_kept["pseudo_actionId"].values.astype(np.int64)
+        pseudo_y_pt  = pdf_kept["pseudo_pointId"].values.astype(np.int64)
+        pseudo_act_p = pdf_kept["act_top1_p"].values.astype(np.float32)
+        pseudo_pt_p  = pdf_kept["pt_top1_p"].values.astype(np.float32)
+        print(f"  Pseudo features built: {pseudo_X.shape}  (joined from feat_test)")
+        # Class distribution log
+        from collections import Counter
+        act_dist = Counter(int(c) for c in pseudo_y_act)
+        pt_dist  = Counter(int(c) for c in pseudo_y_pt)
+        print(f"  Pseudo action class dist: {dict(sorted(act_dist.items()))}")
+        print(f"  Pseudo point  class dist: {dict(sorted(pt_dist.items()))}")
     test_bin_acc = np.zeros(len(X_test))
 
     # Accumulator for test action probs (used as stacking feature for point model)
@@ -333,24 +602,139 @@ def main():
         else:
             X_tr_aug, y_a_aug, y_p_aug, y_s_aug = X_tr, y_a_tr, y_p_tr, y_s_tr
 
-        sw_a = np.array([ACTION_CW.get(int(c), 1.0) for c in y_a_aug], dtype=np.float32)
-        sw_p = np.array([POINT_CW.get(int(c),  1.0) for c in y_p_aug], dtype=np.float32)
+        sw_a_real = np.array([ACTION_CW.get(int(c), 1.0) for c in y_a_aug], dtype=np.float32)
+        sw_p_real = np.array([POINT_CW.get(int(c),  1.0) for c in y_p_aug], dtype=np.float32)
+
+        # ── Pseudo-row per-task injection (R-009 V1) ────────────────────────
+        # Pseudo rows: appended after X_tr_aug (NO flip-aug), with flat
+        # pseudo_weight. Server training EXCLUDES pseudo entirely.
+        if n_pseudo > 0:
+            sw_a_pseudo = np.full(n_pseudo, pseudo_weight, dtype=np.float32)
+            X_tr_act_combined = np.vstack([X_tr_aug, pseudo_X]).astype(np.float32)
+            y_a_act_combined  = np.concatenate([y_a_aug, pseudo_y_act])
+            sw_a              = np.concatenate([sw_a_real, sw_a_pseudo])
+            n_pseudo_act = n_pseudo
+            mass_a_real   = float(sw_a_real.sum())
+            mass_a_pseudo = float(sw_a_pseudo.sum())
+
+            if pseudo_mode == "action_and_point":
+                sw_p_pseudo = np.full(n_pseudo, pseudo_weight, dtype=np.float32)
+                X_tr_pt_combined = np.vstack([X_tr_aug, pseudo_X]).astype(np.float32)
+                y_p_pt_combined  = np.concatenate([y_p_aug, pseudo_y_pt])
+                sw_p             = np.concatenate([sw_p_real, sw_p_pseudo])
+                n_pseudo_pt = n_pseudo
+                mass_p_real   = float(sw_p_real.sum())
+                mass_p_pseudo = float(sw_p_pseudo.sum())
+            else:  # action_only — pseudo NOT in point training
+                X_tr_pt_combined = X_tr_aug
+                y_p_pt_combined  = y_p_aug
+                sw_p             = sw_p_real
+                n_pseudo_pt = 0
+                mass_p_real   = float(sw_p_real.sum())
+                mass_p_pseudo = 0.0
+
+            # Server training NEVER includes pseudo (Codex constraint #5).
+            n_pseudo_srv = 0
+            print(f"  [Pseudo] mode={pseudo_mode}  weight={pseudo_weight}")
+            print(f"  [Pseudo] action: real={len(y_a_aug)}  pseudo={n_pseudo_act}  "
+                  f"sw_mass real={mass_a_real:.1f} pseudo={mass_a_pseudo:.1f} "
+                  f"({100*mass_a_pseudo/(mass_a_real+mass_a_pseudo):.1f}% pseudo)")
+            print(f"  [Pseudo] point : real={len(y_p_aug)}  pseudo={n_pseudo_pt}  "
+                  f"sw_mass real={mass_p_real:.1f} pseudo={mass_p_pseudo:.1f}")
+            print(f"  [Pseudo] server: real={len(y_s_aug)}  pseudo={n_pseudo_srv}  (EXCLUDED per R-009)")
+            assert n_pseudo_srv == 0, "INVARIANT VIOLATION: pseudo rows entered server training"
+        else:
+            X_tr_act_combined = X_tr_aug
+            y_a_act_combined  = y_a_aug
+            sw_a              = sw_a_real
+            X_tr_pt_combined  = X_tr_aug
+            y_p_pt_combined   = y_p_aug
+            sw_p              = sw_p_real
 
         # ══════════════════════════════════════════════════════════════════════
         # PASS A — ACTION models (LGB + XGB + CB)
         # ══════════════════════════════════════════════════════════════════════
-        lgb_a_p = dict(n_estimators=n_boost, learning_rate=0.04,
-                       num_leaves=127, max_depth=9, min_child_samples=8,
-                       subsample=0.8, colsample_bytree=0.7,
-                       reg_alpha=0.1, reg_lambda=1.0,
-                       objective="multiclass", metric="multi_logloss",
-                       num_class=N_ACTION_TRAIN, random_state=seed,
-                       n_jobs=-1, verbose=-1)
-        lgb_a = lgb.train(lgb_a_p,
-            lgb.Dataset(X_tr_aug, label=y_a_aug, weight=sw_a),
-            valid_sets=[lgb.Dataset(X_val, label=y_a_val)],
-            callbacks=[lgb.early_stopping(es_rounds, verbose=False),
-                       lgb.log_evaluation(-1)])
+        if args.r203_focal:
+            # R-203: focal CE multiclass with Cui CB class weights.
+            # Class weighting moves OUT of sample weights and INTO the focal
+            # objective's `alpha[y]`. Sample weights now carry only pseudo-row
+            # downweighting (not class weighting), to avoid double-weighting.
+            class_counts = np.bincount(y_a_act_combined, minlength=N_ACTION_TRAIN)
+            cb_w = cui_cb_weights(class_counts, beta=args.r203_cb_beta)
+            boost_cls = [int(c) for c in args.r203_boost_classes.split(",") if c.strip()]
+            cb_w = apply_focal_boost(cb_w, boost_cls, boost_factor=args.r203_boost_factor)
+            print(f"  [R-203] CB weights (beta={args.r203_cb_beta}, gamma={args.r203_gamma}, "
+                  f"boost={boost_cls}×{args.r203_boost_factor}):")
+            for c in range(N_ACTION_TRAIN):
+                print(f"    cls{c:2d} n={class_counts[c]:5d}  w={cb_w[c]:.3f}"
+                      f"{'  [boost]' if c in boost_cls else ''}")
+            r203_focal_obj_fn = make_focal_multiclass_obj(
+                num_class=N_ACTION_TRAIN, class_weights=cb_w,
+                gamma=args.r203_gamma,
+            )
+            r203_focal_eval_fn = make_focal_multiclass_eval(num_class=N_ACTION_TRAIN)
+            # Pseudo-row downweighting: real=1.0, pseudo=pseudo_weight.
+            # When no pseudo data is present, sw_a == sw_a_real and every entry
+            # was originally `ACTION_CW[y_i]`. Under R-203 we replace those with
+            # 1.0 (class weighting is in alpha). Pseudo rows retain their
+            # explicit pseudo_weight (which was already non-class-derived).
+            if n_pseudo > 0:
+                # Last n_pseudo entries of sw_a are pseudo_weight; preserve them.
+                r203_sw_a = np.ones_like(sw_a)
+                r203_sw_a[-n_pseudo:] = sw_a[-n_pseudo:]
+            else:
+                r203_sw_a = None  # no per-sample weighting needed
+            lgb_a_p = dict(
+                num_leaves=127, max_depth=9, min_child_samples=8,
+                subsample=0.8, colsample_bytree=0.7,
+                reg_alpha=0.1, reg_lambda=1.0,
+                learning_rate=0.04,
+                objective=r203_focal_obj_fn,
+                num_class=N_ACTION_TRAIN,
+                metric="None",
+                random_state=seed, n_jobs=-1, verbose=-1,
+            )
+            ds_tr = lgb.Dataset(X_tr_act_combined, label=y_a_act_combined,
+                                weight=r203_sw_a)
+            ds_va = lgb.Dataset(X_val, label=y_a_val, reference=ds_tr)
+            lgb_a = lgb.train(
+                lgb_a_p, ds_tr,
+                num_boost_round=n_boost,
+                valid_sets=[ds_va],
+                feval=r203_focal_eval_fn,
+                callbacks=[lgb.early_stopping(es_rounds, verbose=False),
+                           lgb.log_evaluation(-1)],
+            )
+            # LightGBM with custom-obj multiclass returns raw logits from
+            # predict(). Downstream code assumes probabilities. Wrap with a
+            # thin adapter that auto-softmaxes (preserving raw_score=True
+            # opt-in for the rare caller that wants logits).
+            _raw_lgb_a = lgb_a
+            class _SoftmaxLGBWrapper:
+                def __init__(self, m): self._m = m
+                def predict(self, X, *args, **kwargs):
+                    want_raw = kwargs.pop('raw_score', False)
+                    raw = self._m.predict(X, raw_score=True, *args, **kwargs)
+                    if want_raw:
+                        return raw
+                    e = np.exp(raw - raw.max(axis=1, keepdims=True))
+                    return e / e.sum(axis=1, keepdims=True)
+                def __getattr__(self, name):
+                    return getattr(self._m, name)
+            lgb_a = _SoftmaxLGBWrapper(lgb_a)
+        else:
+            lgb_a_p = dict(n_estimators=n_boost, learning_rate=0.04,
+                           num_leaves=127, max_depth=9, min_child_samples=8,
+                           subsample=0.8, colsample_bytree=0.7,
+                           reg_alpha=0.1, reg_lambda=1.0,
+                           objective="multiclass", metric="multi_logloss",
+                           num_class=N_ACTION_TRAIN, random_state=seed,
+                           n_jobs=-1, verbose=-1)
+            lgb_a = lgb.train(lgb_a_p,
+                lgb.Dataset(X_tr_act_combined, label=y_a_act_combined, weight=sw_a),
+                valid_sets=[lgb.Dataset(X_val, label=y_a_val)],
+                callbacks=[lgb.early_stopping(es_rounds, verbose=False),
+                           lgb.log_evaluation(-1)])
 
         xgb_a = xgb.XGBClassifier(
             n_estimators=n_boost, learning_rate=0.04, max_depth=7,
@@ -358,7 +742,7 @@ def main():
             objective="multi:softprob", num_class=N_ACTION_TRAIN,
             eval_metric="mlogloss", early_stopping_rounds=es_rounds,
             random_state=seed, n_jobs=-1, verbosity=0, tree_method="hist")
-        xgb_a.fit(X_tr_aug, y_a_aug, sample_weight=sw_a,
+        xgb_a.fit(X_tr_act_combined, y_a_act_combined, sample_weight=sw_a,
                   eval_set=[(X_val, y_a_val)], verbose=False)
 
         if skip_cb:
@@ -369,7 +753,7 @@ def main():
                 loss_function="MultiClass", classes_count=N_ACTION_TRAIN,
                 random_seed=seed, verbose=False, allow_writing_files=False,
                 early_stopping_rounds=es_rounds)
-            cb_a.fit(X_tr_aug, y_a_aug, sample_weight=sw_a,
+            cb_a.fit(X_tr_act_combined, y_a_act_combined, sample_weight=sw_a,
                      eval_set=(X_val, y_a_val), use_best_model=True)
 
         # Action probabilities (15-dim for pass A output)
@@ -424,18 +808,34 @@ def main():
         # PASS B — POINT models (binary miss + 10-class LGB/XGB/CB)
         #          with action probs as extra stacking features
         # ══════════════════════════════════════════════════════════════════════
+        # Build action stacking features for training rows.
+        # If point_combined includes pseudo, also predict action probs on pseudo
+        # to attach the same per-row action stack column.
         if use_stack:
-            # Extend feature matrices with action probs (15 extra cols each)
-            X_tr_ext      = np.hstack([X_tr,     pa_tr_15])       # (n_tr,   F+15)
-            X_tr_aug_ext  = np.hstack([X_tr_aug, pa_tr_aug_15])   # (n_aug,  F+15)
-            X_val_ext     = np.hstack([X_val,    pa_val_15])       # (n_val,  F+15)
+            X_tr_ext      = np.hstack([X_tr,     pa_tr_15])       # (n_tr,   F+15) — real, unflipped
+            X_val_ext     = np.hstack([X_val,    pa_val_15])      # (n_val,  F+15)
+            X_tr_aug_ext  = np.hstack([X_tr_aug, pa_tr_aug_15])   # (n_aug,  F+15) — real flipped
+            if n_pseudo > 0 and pseudo_mode == "action_and_point":
+                # Action probs on pseudo rows (predicted by current-fold action model).
+                pa_pseudo_lgb = lgb_a.predict(pseudo_X)
+                pa_pseudo_xgb = pad_proba(xgb_a.predict_proba(pseudo_X), xgb_a.classes_, N_ACTION_TRAIN)
+                if cb_a is not None:
+                    pa_pseudo_cb = pad_proba(cb_a.predict_proba(pseudo_X), cb_a.classes_, N_ACTION_TRAIN)
+                    pa_pseudo_15 = (pa_pseudo_lgb + pa_pseudo_xgb + pa_pseudo_cb) / 3.0
+                else:
+                    pa_pseudo_15 = (pa_pseudo_lgb + pa_pseudo_xgb) / 2.0
+                pseudo_X_ext = np.hstack([pseudo_X, pa_pseudo_15]).astype(np.float32)
+                X_tr_pt_aug_ext = np.vstack([X_tr_aug_ext, pseudo_X_ext])
+            else:
+                X_tr_pt_aug_ext = X_tr_aug_ext
         else:
             X_tr_ext      = X_tr
-            X_tr_aug_ext  = X_tr_aug
             X_val_ext     = X_val
+            X_tr_aug_ext  = X_tr_aug
+            X_tr_pt_aug_ext = X_tr_pt_combined  # pseudo (no action-stack columns) appended
 
-        y_miss_aug = (y_p_aug == 0).astype(np.int32)
-        y_miss_val = (y_p_val == 0).astype(np.int32)
+        y_miss_combined = (y_p_pt_combined == 0).astype(np.int32)
+        y_miss_val      = (y_p_val == 0).astype(np.int32)
 
         # ── POINT binary (miss vs non-miss) ───────────────────────────────────
         lgb_pb_p = dict(n_estimators=n_boost, learning_rate=0.04,
@@ -444,7 +844,7 @@ def main():
                         objective="binary", metric="binary_logloss",
                         random_state=seed, n_jobs=-1, verbose=-1)
         lgb_pb = lgb.train(lgb_pb_p,
-            lgb.Dataset(X_tr_aug_ext, label=y_miss_aug.astype(np.float32)),
+            lgb.Dataset(X_tr_pt_aug_ext, label=y_miss_combined.astype(np.float32)),
             valid_sets=[lgb.Dataset(X_val_ext, label=y_miss_val.astype(np.float32))],
             callbacks=[lgb.early_stopping(es_rounds, verbose=False),
                        lgb.log_evaluation(-1)])
@@ -460,7 +860,7 @@ def main():
                        num_class=N_POINT, random_state=seed,
                        n_jobs=-1, verbose=-1)
         lgb_p = lgb.train(lgb_p_p,
-            lgb.Dataset(X_tr_aug_ext, label=y_p_aug, weight=sw_p),
+            lgb.Dataset(X_tr_pt_aug_ext, label=y_p_pt_combined, weight=sw_p),
             valid_sets=[lgb.Dataset(X_val_ext, label=y_p_val)],
             callbacks=[lgb.early_stopping(es_rounds, verbose=False),
                        lgb.log_evaluation(-1)])
@@ -472,7 +872,7 @@ def main():
             objective="multi:softprob", num_class=N_POINT,
             eval_metric="mlogloss", early_stopping_rounds=es_rounds,
             random_state=seed, n_jobs=-1, verbosity=0, tree_method="hist")
-        xgb_p.fit(X_tr_aug_ext, y_p_aug, sample_weight=sw_p,
+        xgb_p.fit(X_tr_pt_aug_ext, y_p_pt_combined, sample_weight=sw_p,
                   eval_set=[(X_val_ext, y_p_val)], verbose=False)
         pp_xgb = xgb_p.predict_proba(X_val_ext)
 
@@ -484,7 +884,7 @@ def main():
                 loss_function="MultiClass", classes_count=N_POINT,
                 random_seed=seed, verbose=False, allow_writing_files=False,
                 early_stopping_rounds=es_rounds)
-            cb_p.fit(X_tr_aug_ext, y_p_aug, sample_weight=sw_p,
+            cb_p.fit(X_tr_pt_aug_ext, y_p_pt_combined, sample_weight=sw_p,
                      eval_set=(X_val_ext, y_p_val), use_best_model=True)
 
         pp_xgb  = pad_proba(pp_xgb, xgb_p.classes_, N_POINT)
@@ -561,6 +961,22 @@ def main():
                          xgb_s.predict_proba(X_test_srv_ext)[:, 1]) / 2.0 / len(splits)
 
         gc.collect()
+
+    # ─── R-009 invariant checks (Codex requirement #4) ────────────────────────
+    if args.pseudo_parquet:
+        assert oof_act.shape[0] == n_samples == 69712, \
+            f"OOF shape invariant violated: oof_act.shape[0]={oof_act.shape[0]} vs n_samples={n_samples}"
+        assert oof_pt.shape[0] == n_samples, \
+            f"oof_pt.shape[0]={oof_pt.shape[0]} vs n_samples={n_samples}"
+        assert oof_srv.shape[0] == n_samples, \
+            f"oof_srv.shape[0]={oof_srv.shape[0]} vs n_samples={n_samples}"
+        assert y_a_all.shape[0] == n_samples
+        assert y_p_all.shape[0] == n_samples
+        assert y_s_all.shape[0] == n_samples
+        assert nsn_all.shape[0] == n_samples
+        print(f"\n[R-009 invariant] OOF arrays length = {n_samples} (real train rows only) [PASS]")
+        print(f"[R-009 invariant] Pseudo rows seen by server training = 0 (excluded entirely) [PASS]")
+        print(f"[R-009 invariant] Pseudo rows flip-augmented = 0 (no flip on pseudo) [PASS]")
 
     # ─── Global OOF evaluation ────────────────────────────────────────────────
     print("\n" + "=" * 70)

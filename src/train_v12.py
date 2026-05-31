@@ -208,6 +208,8 @@ def main():
                         help="Override early stopping rounds")
     parser.add_argument("--tag",      type=str, default="v12",
                         help="Tag for OOF/test output filenames (default: v12)")
+    parser.add_argument("--test-path", type=str, default=None,
+                        help="Override TEST_PATH from config (e.g. data/test_new.csv).")
     args = parser.parse_args()
 
     is_smoke    = args.smoke
@@ -241,7 +243,8 @@ def main():
                                   raw_df=raw_df)
 
     raw_train = pd.read_csv(TRAIN_PATH)
-    raw_test  = pd.read_csv(TEST_PATH)
+    test_path = args.test_path or TEST_PATH
+    raw_test  = pd.read_csv(test_path)
     train_df, test_df, _ = clean_data(raw_train, raw_test)
     test_df["serverGetPoint"] = -1
 
