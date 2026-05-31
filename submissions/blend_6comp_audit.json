@@ -1,0 +1,47 @@
+{
+  "baseline_ov": 0.37918829463846815,
+  "results": [
+    {
+      "cand": "v11_mulminet_aug_oldtest_softf1_phaseB",
+      "ov": 0.37892772035881217,
+      "dov": -0.00026057427965597846,
+      "label": "STAGE_2"
+    },
+    {
+      "cand": "meta_stack",
+      "ov": 0.3812263367950969,
+      "dov": 0.0020380421566287277,
+      "label": "STAGE_1"
+    },
+    {
+      "cand": "meta_stack_v2_logistic",
+      "ov": 0.38165319639749906,
+      "dov": 0.002464901759030913,
+      "label": "STAGE_1"
+    },
+    {
+      "cand": "v14_seed2_v15feat_c_oldtest",
+      "ov": 0.3791868447765703,
+      "dov": -1.449861897873106e-06,
+      "label": "STAGE_2"
+    },
+    {
+      "cand": "v14_recvhand",
+      "ov": 0.37941077202581946,
+      "dov": 0.0002224773873513164,
+      "label": "STAGE_1"
+    },
+    {
+      "cand": "v14_recvprofile",
+      "ov": 0.3794249423966245,
+      "dov": 0.00023664775815634975,
+      "label": "STAGE_1"
+    },
+    {
+      "cand": "v11_aug_big",
+      "ov": 0.38006919930328187,
+      "dov": 0.0008809046648137198,
+      "label": "STAGE_1"
+    }
+  ]
+}

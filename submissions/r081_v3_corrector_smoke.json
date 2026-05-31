@@ -1,0 +1,75 @@
+{
+  "rid": "R-081-v3",
+  "ts": "2026-05-26",
+  "smoke_scope": "Fold-1 only",
+  "base_subset": [
+    "v11_aug_oldtest",
+    "v11plus",
+    "v13_oldtest",
+    "v14_seed2_v15feat_a",
+    "v16_avg3"
+  ],
+  "r034_pair_weights": {
+    "w_a": [
+      0.11635990982950861,
+      0.2187631465693103,
+      0.35305861365932983,
+      0.05828844872902034,
+      0.2535298812128308
+    ],
+    "w_p": [
+      0.16895215982727801,
+      0.10740964763323686,
+      0.24212270027276564,
+      0.27999940237847404,
+      0.20151608988824554
+    ],
+    "w_s": [
+      0.008655571288514373,
+      0.017798328880330797,
+      0.25347369753714744,
+      0.4403385233659303,
+      0.27973387892807716
+    ]
+  },
+  "r034_pair_full_oof": {
+    "F1_a": 0.41214977399006647,
+    "F1_p": 0.2283902006966795,
+    "AUC": 0.6134116967596248,
+    "OV": 0.37889832922662336
+  },
+  "fold1_results": {
+    "act": {
+      "p_wrong_auc": 0.6861627745811403,
+      "base_f1": 0.4216617827948713,
+      "gbm_solo_f1": 0.3692707652465198,
+      "corrected_f1": 0.42175172520589793,
+      "delta_f1": 8.994241102661116e-05,
+      "n_overrides": 50,
+      "n_eligible": 1229,
+      "override_now_correct": 12,
+      "override_was_correct": 13
+    },
+    "pt": {
+      "p_wrong_auc": 0.6456416217897806,
+      "base_f1": 0.22050450916838438,
+      "gbm_solo_f1": 0.16207703569840587,
+      "corrected_f1": 0.22078657496567158,
+      "delta_f1": 0.0002820657972872065,
+      "n_overrides": 50,
+      "n_eligible": 258,
+      "override_now_correct": 18,
+      "override_was_correct": 10
+    }
+  },
+  "p_wrong_threshold": 0.5,
+  "alt_confidence_threshold": 0.35,
+  "max_overrides_per_task": 50,
+  "smoke_sanity_pass": true,
+  "v04_candidate_report": {
+    "theoretical_generalization_reason": "v3 fix: corrector trained on the same Dirichlet-weighted R-034 PAIR blend used at inference. Removes the train/inference target mismatch that diluted v2's signal. Same bounded-override mechanism (cap 50/task).",
+    "why_transfers_to_test_new": "Same as v2 \u2014 model-output-derived features (distribution-invariant). Target alignment fix means corrector learns on the SAME prediction distribution it will see at inference, which should sharpen the signal.",
+    "lb_confirm_hypothesis": "LB DeltaOV >= +0.001 => v3 alignment fix improves transfer over v2.",
+    "lb_reject_hypothesis": "LB DeltaOV <= -0.002 => corrector mechanism overfits OOF regardless of target alignment; GBM-corrector route confirmed closed."
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "rid": "R-081",
+  "ts": "2026-05-26",
+  "smoke_scope": "Fold-1 only",
+  "base_subset": [
+    "v11_aug_oldtest",
+    "v11plus",
+    "v13_oldtest",
+    "v14_seed2_v15feat_a",
+    "v16_avg3"
+  ],
+  "fold1_results": {
+    "act": {
+      "p_wrong_auc": 0.6906385093043934,
+      "base_f1": 0.4128876662702684,
+      "corrected_f1": 0.41199086491547804,
+      "delta_f1": -0.0008968013547903664,
+      "n_overrides": 50,
+      "best_iteration": 36,
+      "feature_importance": {
+        "maxp_v11augOLD": 1103.4505920410156,
+        "maxp_v11plus": 467.15239906311035,
+        "maxp_v13OLD": 4510.992003440857,
+        "maxp_v14v15a": 864.082896232605,
+        "maxp_v16avg3": 9682.874793052673,
+        "ent_v11augOLD": 684.2788028717041,
+        "ent_v11plus": 1072.0809965133667,
+        "ent_v13OLD": 2343.401803970337,
+        "ent_v14v15a": 728.2940998077393,
+        "ent_v16avg3": 2512.485198020935,
+        "amax_v11augOLD": 1960.8983888626099,
+        "amax_v11plus": 529.7731971740723,
+        "amax_v13OLD": 1821.046703338623,
+        "amax_v14v15a": 1780.1718006134033,
+        "amax_v16avg3": 3325.4961977005005,
+        "agreement": 932.9354047775269,
+        "margin": 36328.48550987244,
+        "sn_le2": 404.344500541687,
+        "sn_3to4": 0.0,
+        "sn_ge5": 386.3220977783203
+      }
+    },
+    "pt": {
+      "p_wrong_auc": 0.6506023536456903,
+      "base_f1": 0.21771774358818416,
+      "corrected_f1": 0.2182361489028048,
+      "delta_f1": 0.0005184053146206347,
+      "n_overrides": 50,
+      "best_iteration": 49,
+      "feature_importance": {
+        "maxp_v11augOLD": 1836.8998079299927,
+        "maxp_v11plus": 1729.6883702278137,
+        "maxp_v13OLD": 1814.1988925933838,
+        "maxp_v14v15a": 14684.689011573792,
+        "maxp_v16avg3": 809.1619281768799,
+        "ent_v11augOLD": 657.9005098342896,
+        "ent_v11plus": 1029.034984588623,
+        "ent_v13OLD": 1642.081702709198,
+        "ent_v14v15a": 4469.331332683563,
+        "ent_v16avg3": 880.5981588363647,
+        "amax_v11augOLD": 2440.9734587669373,
+        "amax_v11plus": 5054.209043979645,
+        "amax_v13OLD": 2123.4615602493286,
+        "amax_v14v15a": 1585.3488073349,
+        "amax_v16avg3": 1872.1259927749634,
+        "agreement": 1224.5159320831299,
+        "margin": 3381.4749240875244,
+        "sn_le2": 429.2264766693115,
+        "sn_3to4": 22.38249969482422,
+        "sn_ge5": 275.07997608184814
+      }
+    }
+  },
+  "p_wrong_threshold": 0.5,
+  "max_overrides_per_task": 50,
+  "smoke_sanity_pass": true,
+  "smoke_sanity_reason": "OK",
+  "v04_candidate_report": {
+    "theoretical_generalization_reason": "Conditional correction on R-034 PAIR; bounded override count caps downside risk to ~R-072 magnitude (-0.003). Mechanism closer to R-042 rule_override (1.0 LB transfer) than R-054r meta_stack (-0.0103 LB).",
+    "why_transfers_to_test_new": "Where blend is confident we don't touch. Where uncertain GBM uses agreement/entropy features that are distribution-invariant. Override cap means wrong call loses bounded amount.",
+    "lb_confirm_hypothesis": "LB DeltaOV >= +0.001 => bounded conditional correction transfers; mechanism distinct from pure meta-stacking.",
+    "lb_reject_hypothesis": "LB DeltaOV <= -0.002 => even conditional correction overfits OOF; GBM-corrector route closed for this base model family."
+  }
+}

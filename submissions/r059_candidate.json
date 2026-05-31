@@ -1,0 +1,15 @@
+{
+  "rid": "R059",
+  "swap_in": "v14_seed2_v15feat_a_oldtest_avg3",
+  "slot": "v14_seed2_v15feat_a",
+  "OV": 0.376035261949773,
+  "dOV_vs_R034": -0.002551640861388371,
+  "F1_a": 0.4121614275879264,
+  "F1_p": 0.22183987596839394,
+  "AUC": 0.6121737026362242,
+  "pred_LB_plus_rule_lo": 0.38015138536659726,
+  "pred_LB_plus_rule_hi": 0.3841749626694598,
+  "submission_base": "submission_R059_v15feat_a_oldtest_avg3_swap.csv",
+  "submission_plus_rule": "submission_R059r_v15feat_a_oldtest_avg3_PLUS_RULE.csv",
+  "R034_baseline_OV": 0.37858690281116136
+}

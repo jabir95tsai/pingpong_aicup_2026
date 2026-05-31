@@ -1,0 +1,47 @@
+{
+  "baseline_ov": 0.37918829463846815,
+  "results": [
+    {
+      "tag": "v14_seed2_v15feat_a_oldtest",
+      "best_slot": "v13_oldtest",
+      "ov": 0.3782544475372508,
+      "dov": -0.0009338471012173555,
+      "label": "STAGE_2"
+    },
+    {
+      "tag": "v14_seed2_v15feat_b_oldtest",
+      "best_slot": "v13_oldtest",
+      "ov": 0.3782355407806248,
+      "dov": -0.0009527538578433248,
+      "label": "STAGE_2"
+    },
+    {
+      "tag": "v14_recvhand_oldtest",
+      "best_slot": "v13_oldtest",
+      "ov": 0.37869841087856126,
+      "dov": -0.0004898837599068839,
+      "label": "STAGE_2"
+    },
+    {
+      "tag": "v14_recvprofile_oldtest",
+      "best_slot": "v13_oldtest",
+      "ov": 0.37859085511131285,
+      "dov": -0.0005974395271552968,
+      "label": "STAGE_2"
+    },
+    {
+      "tag": "v14_seed2_v15feat_c_oldtest",
+      "best_slot": "v13_oldtest",
+      "ov": 0.3792298902155099,
+      "dov": 4.1595577041753096e-05,
+      "label": "STAGE_1"
+    },
+    {
+      "tag": "v11_mulminet_aug_oldtest_softf1_phaseB",
+      "best_slot": "v11_aug_oldtest",
+      "ov": 0.37680007917174735,
+      "dov": -0.0023882154667208,
+      "label": "STAGE_3"
+    }
+  ]
+}

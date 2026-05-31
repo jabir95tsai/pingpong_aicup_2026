@@ -1,0 +1,95 @@
+{
+  "candidate": {
+    "rid": "R-070-nomismatch",
+    "name": "v15feat_e_nomismatch (5-feature) Fold-1 smoke",
+    "tier": "T2-component",
+    "class": "B-feature",
+    "stage": "smoke",
+    "oof_delta": {
+      "OV": 0.002262992356866167,
+      "F1_a": -0.0008223326124386365,
+      "F1_p": 0.00831132123290576,
+      "AUC": -0.0036630154566035245
+    },
+    "holdout_delta": {
+      "OV": -0.0010537727459546398
+    },
+    "slice_penalties": {
+      "sn_bucket_regressions": [
+        {
+          "bucket": "SN<=2",
+          "delta_OV": -0.005073944473736103
+        }
+      ],
+      "canary_class_drops": [
+        {
+          "class": "action5",
+          "n": 787,
+          "baseline_F1": 0.20966542750929368,
+          "smoke_F1": 0.1863905325443787,
+          "delta_F1": -0.02327489496491497
+        },
+        {
+          "class": "action6",
+          "n": 1688,
+          "baseline_F1": 0.487211478477854,
+          "smoke_F1": 0.46183825917505683,
+          "delta_F1": -0.02537321930279718
+        },
+        {
+          "class": "action13",
+          "n": 1418,
+          "baseline_F1": 0.4723148765843896,
+          "smoke_F1": 0.45710316081972907,
+          "delta_F1": -0.015211715764660516
+        }
+      ]
+    },
+    "guards": {
+      "uses_test_sgp_truth": false,
+      "overwrites_test_sgp_truth": false,
+      "sgp_derived_proxy": false,
+      "forbidden_rally_uid_inference": false,
+      "teammate_leak_artifact": false,
+      "external_leak_data": false,
+      "oof_test_alignment_validated": true,
+      "codex_smoke_approved": true,
+      "codex_5fold_approved": false,
+      "rule_override_applied": true,
+      "rule_override_applicable": true,
+      "p11_directly_optimized": false
+    },
+    "compute_cost_hours": 0.5,
+    "novelty": "medium"
+  },
+  "verdict": {
+    "rid": "R-070-nomismatch",
+    "hard_block": false,
+    "block_reason": "",
+    "expected_lb_delta": -0.004963306878820449,
+    "goal_score": -0.004291058862908916,
+    "risk_level": "MEDIUM",
+    "leakage_risk": "LOW",
+    "public_lb_overfit_risk": "LOW",
+    "generalization_score": 0.35000000000000003,
+    "priority": "PARK",
+    "target_progress_ratio": -0.38207204332554123,
+    "recommended_action": "PARK",
+    "explanation": "class=B-feature | OOF_OV=+0.0023 | xfer=0.90 | pre=+0.0020 | slice=-0.0070 | novelty=+0.0003 | expLB=-0.0050 | progress=-38.2% | gen=0.35 | leak=LOW | pubLBoverfit=LOW | priority=PARK",
+    "_diag": {
+      "base_lift_OV": 0.002262992356866167,
+      "transfer_multiplier": 0.9,
+      "slice_penalty": -0.007,
+      "holdout_signal": 0.0,
+      "compute_penalty": 0.0,
+      "novelty_bonus": 0.0003,
+      "anchor_lb": 0.3870095,
+      "target_lb": 0.4,
+      "current_gap_to_target": 0.012990500000000016,
+      "target_progress_ratio": -0.38207204332554123,
+      "implied_predicted_lb": 0.38204619312117954,
+      "generalization_score": 0.35000000000000003,
+      "gen_boost": 0.00037224801591153364
+    }
+  }
+}

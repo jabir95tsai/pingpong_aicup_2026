@@ -1,0 +1,71 @@
+{
+  "stage": "R-065 Stage-0 candidate parquet",
+  "ts": "2026-05-23",
+  "teachers": [
+    "v14_seed2_v15feat_a",
+    "v11_aug_oldtest",
+    "v16_testhist_aug_oldtest",
+    "v13_oldtest",
+    "v14_seed2_v16match_v2"
+  ],
+  "teacher_count": 5,
+  "thresholds": {
+    "min_agree_count": 4,
+    "action_top1_min": 0.6,
+    "action_sep_min": 0.1,
+    "action_skip_classes": [
+      15,
+      16,
+      17,
+      18
+    ],
+    "point_top1_min": 0.5,
+    "point_sep_min": 0.08,
+    "point_skip_classes": [
+      0
+    ]
+  },
+  "test_uid_count": 1845,
+  "test_uid_sha256_16": "3b9e3138093963a5",
+  "n_action_kept": 296,
+  "n_point_kept": 2,
+  "n_any_kept": 297,
+  "n_both_kept": 1,
+  "pool_floor_total_pass": true,
+  "pool_floor_each_pass": false,
+  "default_pseudo_weight": 0.1,
+  "n_action_classes_consensus": 15,
+  "schema": [
+    "rally_uid (int)",
+    "pseudo_actionId (int, -1=skipped)",
+    "pseudo_pointId (int, -1=skipped)",
+    "act_top1_p (float)",
+    "act_sep (float)",
+    "pt_top1_p (float)",
+    "pt_sep (float)",
+    "act_agree_count (int)",
+    "pt_agree_count (int)",
+    "kept_action (bool)",
+    "kept_point (bool)",
+    "kept (bool)",
+    "serverGetPoint (int, always -1 sentinel)"
+  ],
+  "action_class_distribution": {
+    "1": 198,
+    "2": 8,
+    "3": 1,
+    "4": 5,
+    "6": 2,
+    "8": 1,
+    "9": 14,
+    "10": 28,
+    "11": 14,
+    "12": 10,
+    "13": 14,
+    "14": 1
+  },
+  "point_class_distribution": {
+    "1": 1,
+    "8": 1
+  }
+}

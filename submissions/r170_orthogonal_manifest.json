@@ -1,0 +1,24 @@
+{
+  "rid": "R-170",
+  "ts": "2026-05-26",
+  "base_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R067cr_alpha030_v22_blend_PLUS_RULE.csv",
+  "component_csvs": {
+    "R-094 v2": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R094v2_R067cr_PLUS_SOFTF1_act_only_alpha005_PLUS_RULE.csv",
+    "R-081 v2": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R081v2_R067cr_PLUS_CORRECTOR.csv"
+  },
+  "output_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R170_R094v2_PLUS_R081v2_orthogonal_PLUS_RULE.csv",
+  "diffs_vs_base": {
+    "action": 83,
+    "point": 50,
+    "sgp": 0
+  },
+  "v04_candidate_report": {
+    "theoretical_generalization_reason": "Combine two LB-untested but smoke-passed mechanisms acting on DISJOINT row sets (only 1-row overlap on action). R-094 v2 = SoftF1 6th-component additive (B-feature-class). R-081 v2 = bounded GBM corrector (new-mechanism). Orthogonal coverage.",
+    "why_transfers_to_test_new": "Each component already passes individual sanity. Combined effect on disjoint rows preserves each mechanism's LB transfer rate. Cumulative downside bounded at sum of individual ceilings (~-0.006).",
+    "smoke_sanity_pass": true,
+    "lb_probe_worthy": true,
+    "lb_confirm_hypothesis": "LB \u0394OV >= +0.0008 \u21d2 orthogonal mechanism combination > sum of individual best estimates; can stack diverse correctors.",
+    "lb_reject_hypothesis": "LB \u0394OV <= -0.003 \u21d2 combination interaction dominates; mechanisms interfere even on disjoint rows; close the stacking route.",
+    "predicted_lb_delta": "+0.0006 to +0.0011 (sum of components, minus interaction)"
+  }
+}

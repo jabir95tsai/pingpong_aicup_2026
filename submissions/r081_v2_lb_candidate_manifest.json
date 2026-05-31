@@ -1,0 +1,196 @@
+{
+  "rid": "R-081-v2",
+  "ts": "2026-05-26",
+  "base_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R067cr_alpha030_v22_blend_PLUS_RULE.csv",
+  "output_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R081v2_R067cr_PLUS_CORRECTOR.csv",
+  "fold1_smoke_delta_f1_act": 0.0003,
+  "fold1_smoke_delta_f1_pt": 0.0003,
+  "results_per_task": {
+    "act": {
+      "n_eligible": 198,
+      "n_overrides": 50,
+      "diff_vs_r067cr": 50
+    },
+    "pt": {
+      "n_eligible": 79,
+      "n_overrides": 50,
+      "diff_vs_r067cr": 50
+    }
+  },
+  "n_action_overrides": 50,
+  "n_point_overrides": 50,
+  "sample_action_overrides": [
+    {
+      "rally_uid": 15970,
+      "task": "act",
+      "from": 13,
+      "to": 9,
+      "p_wrong": 0.6815280873069228,
+      "alt_maxp": 0.6874201289079602
+    },
+    {
+      "rally_uid": 20126,
+      "task": "act",
+      "from": 11,
+      "to": 10,
+      "p_wrong": 0.7690126281652039,
+      "alt_maxp": 0.5891214722269461
+    },
+    {
+      "rally_uid": 17339,
+      "task": "act",
+      "from": 14,
+      "to": 12,
+      "p_wrong": 0.5426852402332261,
+      "alt_maxp": 0.7980292439870811
+    },
+    {
+      "rally_uid": 17728,
+      "task": "act",
+      "from": 13,
+      "to": 12,
+      "p_wrong": 0.6383000099368283,
+      "alt_maxp": 0.6195515973527159
+    },
+    {
+      "rally_uid": 20256,
+      "task": "act",
+      "from": 1,
+      "to": 12,
+      "p_wrong": 0.5452265652707539,
+      "alt_maxp": 0.7130560469800422
+    },
+    {
+      "rally_uid": 18695,
+      "task": "act",
+      "from": 4,
+      "to": 10,
+      "p_wrong": 0.7243749676401697,
+      "alt_maxp": 0.5188043669553972
+    },
+    {
+      "rally_uid": 16847,
+      "task": "act",
+      "from": 11,
+      "to": 10,
+      "p_wrong": 0.7375557733721763,
+      "alt_maxp": 0.5000514040112425
+    },
+    {
+      "rally_uid": 15832,
+      "task": "act",
+      "from": 7,
+      "to": 10,
+      "p_wrong": 0.7498902088787172,
+      "alt_maxp": 0.48622226412988795
+    },
+    {
+      "rally_uid": 20966,
+      "task": "act",
+      "from": 6,
+      "to": 2,
+      "p_wrong": 0.6429012582347751,
+      "alt_maxp": 0.560891015984464
+    },
+    {
+      "rally_uid": 17087,
+      "task": "act",
+      "from": 0,
+      "to": 13,
+      "p_wrong": 0.7157231096184247,
+      "alt_maxp": 0.49643735048442134
+    }
+  ],
+  "sample_point_overrides": [
+    {
+      "rally_uid": 15862,
+      "task": "pt",
+      "from": 5,
+      "to": 9,
+      "p_wrong": 0.8442409537498116,
+      "alt_maxp": 0.46427380598043944
+    },
+    {
+      "rally_uid": 20291,
+      "task": "pt",
+      "from": 8,
+      "to": 0,
+      "p_wrong": 0.7797203307979024,
+      "alt_maxp": 0.4434073284641611
+    },
+    {
+      "rally_uid": 20330,
+      "task": "pt",
+      "from": 5,
+      "to": 9,
+      "p_wrong": 0.9253673723877969,
+      "alt_maxp": 0.35931695129588015
+    },
+    {
+      "rally_uid": 20195,
+      "task": "pt",
+      "from": 8,
+      "to": 0,
+      "p_wrong": 0.727237644225895,
+      "alt_maxp": 0.44583122446450857
+    },
+    {
+      "rally_uid": 17298,
+      "task": "pt",
+      "from": 8,
+      "to": 0,
+      "p_wrong": 0.7084755068258116,
+      "alt_maxp": 0.457158144213758
+    },
+    {
+      "rally_uid": 18743,
+      "task": "pt",
+      "from": 3,
+      "to": 9,
+      "p_wrong": 0.8410924059755162,
+      "alt_maxp": 0.3794152771222658
+    },
+    {
+      "rally_uid": 16659,
+      "task": "pt",
+      "from": 7,
+      "to": 9,
+      "p_wrong": 0.7841109673360583,
+      "alt_maxp": 0.39242498534175974
+    },
+    {
+      "rally_uid": 20282,
+      "task": "pt",
+      "from": 9,
+      "to": 0,
+      "p_wrong": 0.7689791076146094,
+      "alt_maxp": 0.3949688088329843
+    },
+    {
+      "rally_uid": 17043,
+      "task": "pt",
+      "from": 8,
+      "to": 0,
+      "p_wrong": 0.7212018217340024,
+      "alt_maxp": 0.42051740147996947
+    },
+    {
+      "rally_uid": 17398,
+      "task": "pt",
+      "from": 9,
+      "to": 0,
+      "p_wrong": 0.7054357942697911,
+      "alt_maxp": 0.4250726287243264
+    }
+  ],
+  "v04_candidate_report": {
+    "theoretical_generalization_reason": "Bounded conditional correction on R-067cr LB-best. Train p_wrong + alt-class GBMs on FULL OOF (fold-safe by base-model construction). Apply only when both predictors agree, alt is different, and alt confidence >= 0.35. Cap 50 overrides per task (action/point only; SGP preserved from R-067cr).",
+    "why_transfers_to_test_new": "Features (entropy, margin, agreement) are model-output-derived = distribution-invariant. Override cap caps wrong-direction LB damage near R-072 magnitude (-0.003). Mechanism distinct from R-054r meta_stack (replaced components vs additive bounded corrector).",
+    "smoke_sanity_pass": true,
+    "smoke_sanity_reason": "OK \u2014 Fold-1 \u0394F1 act +0.0003 / pt +0.0003; p_wrong AUC 0.69/0.65; no leak; no catastrophe.",
+    "lb_probe_worthy": true,
+    "lb_confirm_hypothesis": "LB DeltaOV >= +0.001 (R-067cr + 0.001 = 0.388+) => bounded conditional correction transfers; mechanism distinct from pure meta-stacking.",
+    "lb_reject_hypothesis": "LB DeltaOV <= -0.002 (R-067cr - 0.002 = 0.385-) => GBM-corrector route closed for this base model family. Treat as 2nd LB datapoint that GBM-meta is hard to make work for our zoo.",
+    "predicted_lb_delta": "+0.0003 (Fold-1 smoke implies; small with high uncertainty)"
+  }
+}

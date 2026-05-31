@@ -1,0 +1,47 @@
+{
+  "rid": "R-081-v2",
+  "ts": "2026-05-26",
+  "smoke_scope": "Fold-1 only",
+  "base_subset": [
+    "v11_aug_oldtest",
+    "v11plus",
+    "v13_oldtest",
+    "v14_seed2_v15feat_a",
+    "v16_avg3"
+  ],
+  "fold1_results": {
+    "act": {
+      "p_wrong_auc": 0.6906385093043934,
+      "gbm_solo_f1": 0.36891724374201185,
+      "base_f1": 0.4128876662702684,
+      "corrected_f1": 0.413178269957764,
+      "delta_f1": 0.0002906036874956164,
+      "n_overrides": 50,
+      "n_eligible": 1206,
+      "p_wrong_best_iter": 36,
+      "alt_class_best_iter": 94
+    },
+    "pt": {
+      "p_wrong_auc": 0.6506023536456903,
+      "gbm_solo_f1": 0.1626751610888078,
+      "base_f1": 0.21771774358818416,
+      "corrected_f1": 0.21798753414851274,
+      "delta_f1": 0.00026979056032858106,
+      "n_overrides": 50,
+      "n_eligible": 289,
+      "p_wrong_best_iter": 49,
+      "alt_class_best_iter": 49
+    }
+  },
+  "p_wrong_threshold": 0.5,
+  "alt_confidence_threshold": 0.35,
+  "max_overrides_per_task": 50,
+  "smoke_sanity_pass": true,
+  "smoke_sanity_reason": "OK",
+  "v04_candidate_report": {
+    "theoretical_generalization_reason": "v2 corrector: predict p_wrong AND predict the alternative class with a multiclass GBM. Override only when both predictors agree AND the alternative is different from current AND alt confidence is above ALT_CONFIDENCE_THRESHOLD. Bounded cap caps risk to R-042-magnitude (~10-50 changes).",
+    "why_transfers_to_test_new": "Same as v1 \u2014 features are model-output-derived, distribution-invariant. v2 just adds smarter override selection, doesn't change leakage profile.",
+    "lb_confirm_hypothesis": "LB DeltaOV >= +0.001 => smarter corrector transfers.",
+    "lb_reject_hypothesis": "LB DeltaOV <= -0.002 => GBM-corrector route closed."
+  }
+}

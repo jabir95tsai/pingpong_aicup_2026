@@ -1,0 +1,13 @@
+HOLDOUT-AWARE BLEND-SWAP AUDIT (2026-05-24)
+================================================================================
+R-067cr LB-best: 0.3870095
+R-042 baseline:  0.386655
+Baseline R-034 PAIR full OV: 0.3789, holdout OV: 0.3840
+
+Candidates (sorted by holdout dOV):
+  R-060                        class=B-player-style risk       full dOV=+0.0004  holdout dOV=+0.0009  (receiver-profile (no oldtest))
+  R-061                        class=B-player-style risk       full dOV=+0.0005  holdout dOV=-0.0011  (receiver-hand (no oldtest))
+  R-059                        class=B-feature (avg3)          full dOV=-0.0019  holdout dOV=-0.0037  (v15feat_a 3-seed avg + oldtest)
+  R-058oldtest_swap            class=B-feature                 full dOV=-0.0020  holdout dOV=-0.0044  (v15feat_c single seed + oldtest (Codex-favored on holdout AUC))
+  R-058                        class=B-feature (avg3)          full dOV=-0.0022  holdout dOV=-0.0048  (v15feat_c 3-seed avg + oldtest)
+  R-068 Bayes-safe             class=weight-refinement     full dOV=+0.0012  holdout dOV=-0.0001

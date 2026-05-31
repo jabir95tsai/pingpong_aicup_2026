@@ -1,0 +1,158 @@
+{
+  "doc": "Example candidate inputs for src/candidate_goal.py. Anchored on R-067c LB-best = 0.3870095. Each example illustrates a different evaluation path through the scoring formula in GOAL_FUNCTION.md.",
+  "anchor_lb_default": 0.3870095,
+  "examples": [
+    {
+      "name": "historical_R-034",
+      "comment": "B-feature swap (v14_seed2 → v14_seed2_v15feat_a). Actual LB +0.0028. Predicted ~0 by the formula because OOF blend Δ was −0.0005; the actual win came from sub-additivity the formula can't see.",
+      "candidate": {
+        "rid": "R-034",
+        "class": "B-feature",
+        "stage": "ready-for-lb",
+        "oof_delta": {"OV": -0.0005},
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "rule_override_applied": true,
+          "rule_override_applicable": true,
+          "codex_5fold_approved": true
+        },
+        "compute_cost_hours": 3.0,
+        "novelty": "low"
+      }
+    },
+    {
+      "name": "historical_R-042",
+      "comment": "Rule-override post-process. Proven +0.0028 LB; transfer rate 100% for this class.",
+      "candidate": {
+        "rid": "R-042",
+        "class": "rule_override",
+        "stage": "ready-for-lb",
+        "oof_delta": {"OV": 0.0028},
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "rule_override_applied": true,
+          "rule_override_applicable": true
+        },
+        "compute_cost_hours": 0.1,
+        "novelty": "medium"
+      }
+    },
+    {
+      "name": "historical_R-067c",
+      "comment": "Server-head blend (30% v22 SGP). Actual LB +0.000355. Server-head transfer is heavily attenuated (~5% multiplier).",
+      "candidate": {
+        "rid": "R-067c",
+        "class": "server-head-blend",
+        "stage": "ready-for-lb",
+        "oof_delta": {"AUC": 0.0326},
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "rule_override_applied": true,
+          "rule_override_applicable": true
+        },
+        "compute_cost_hours": 1.0,
+        "novelty": "medium"
+      }
+    },
+    {
+      "name": "historical_R-055_blocked",
+      "comment": "B-impure ADD. HARD-BLOCKED regardless of OOF lift. Actual LB −0.0141.",
+      "candidate": {
+        "rid": "R-055",
+        "class": "B-impure",
+        "stage": "ready-for-lb",
+        "oof_delta": {"OV": 0.0058},
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "rule_override_applied": true,
+          "rule_override_applicable": true
+        },
+        "compute_cost_hours": 0.5,
+        "novelty": "low"
+      }
+    },
+    {
+      "name": "historical_R-062r_blocked",
+      "comment": "B-player-style. HARD-BLOCKED. Actual LB −0.0057.",
+      "candidate": {
+        "rid": "R-062r",
+        "class": "B-player-style",
+        "stage": "ready-for-lb",
+        "oof_delta": {"OV": 0.0037},
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "rule_override_applied": true,
+          "rule_override_applicable": true
+        },
+        "compute_cost_hours": 8.0,
+        "novelty": "low"
+      }
+    },
+    {
+      "name": "R-070_7feature_smoke_mixed",
+      "comment": "Current 7-feature smoke. Global PASS but SN≤2 and SN≥5 regressions trigger slice penalty. Holdout negative warns. Predicted EV near zero → PARK.",
+      "candidate": {
+        "rid": "R-070-7feat",
+        "class": "B-feature",
+        "stage": "smoke",
+        "oof_delta": {"OV": -0.0010},
+        "holdout_delta": {"OV": -0.0024},
+        "slice_penalties": {
+          "sn_bucket_regressions": [
+            {"bucket": "SN<=2", "delta_OV": -0.0081},
+            {"bucket": "SN>=5", "delta_OV": -0.0043}
+          ],
+          "canary_class_drops": []
+        },
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "codex_smoke_approved": true,
+          "codex_5fold_approved": false
+        },
+        "compute_cost_hours": 0.5,
+        "novelty": "medium"
+      }
+    },
+    {
+      "name": "R-070_5feature_ablation",
+      "comment": "Codex-approved ablation. Global base +0.0022. SN diagnostics pending (TBD). Treats as smoke; if SN profile is clean, recommends FULL_5FOLD_REVIEW.",
+      "candidate": {
+        "rid": "R-070-5feat",
+        "class": "B-feature",
+        "stage": "smoke",
+        "oof_delta": {"OV": 0.0022},
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "codex_smoke_approved": true,
+          "codex_5fold_approved": false
+        },
+        "compute_cost_hours": 0.5,
+        "novelty": "medium"
+      }
+    },
+    {
+      "name": "hypothetical_clean_B-feature",
+      "comment": "Clean B-feature candidate with positive OOF + holdout, no slice regressions, all guards pass, Codex-approved 5-fold. Should recommend MATERIALIZE_FOR_REVIEW.",
+      "candidate": {
+        "rid": "Hypothetical-clean",
+        "class": "B-feature",
+        "stage": "5fold",
+        "oof_delta": {"OV": 0.0025, "F1_a": 0.0030, "F1_p": 0.0020, "AUC": 0.0010},
+        "holdout_delta": {"OV": 0.0015},
+        "slice_penalties": {
+          "sn_bucket_regressions": [],
+          "canary_class_drops": []
+        },
+        "guards": {
+          "oof_test_alignment_validated": true,
+          "codex_smoke_approved": true,
+          "codex_5fold_approved": true,
+          "rule_override_applied": true,
+          "rule_override_applicable": true
+        },
+        "compute_cost_hours": 3.0,
+        "novelty": "low"
+      }
+    }
+  ]
+}

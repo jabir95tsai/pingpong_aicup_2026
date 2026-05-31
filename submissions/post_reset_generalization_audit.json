@@ -1,0 +1,71 @@
+{
+  "ts": "2026-05-24",
+  "purpose": "Post-reset generalization audit; identifies components that generalize vs overfit OOF",
+  "p11_holdout_rows": 8284,
+  "p11_holdout_pct": 11.883176497590085,
+  "p11_holdout_players": 25,
+  "test_overlap_pct": 56.3,
+  "components": [
+    {
+      "tag": "v11_aug_oldtest",
+      "class": "B-pure (in R-034)",
+      "full_auc": 0.5426812294268989,
+      "holdout_auc": 0.5276861730129885,
+      "delta": -0.014995056413910413
+    },
+    {
+      "tag": "v11plus",
+      "class": "transformer (in R-034)",
+      "full_auc": 0.5541582369492936,
+      "holdout_auc": 0.5376824427133599,
+      "delta": -0.016475794235933705
+    },
+    {
+      "tag": "v13_oldtest",
+      "class": "B-pure GBM (in R-034)",
+      "full_auc": 0.6045102765143336,
+      "holdout_auc": 0.6093353446035631,
+      "delta": 0.004825068089229445
+    },
+    {
+      "tag": "v14_seed2_v15feat_a",
+      "class": "B-feature (R-034 LB-WIN)",
+      "full_auc": 0.6113332944095553,
+      "holdout_auc": 0.6178937719162394,
+      "delta": 0.006560477506684093
+    },
+    {
+      "tag": "v16_avg3",
+      "class": "B-pure (in R-034)",
+      "full_auc": 0.6111418442236479,
+      "holdout_auc": 0.6126389492862995,
+      "delta": 0.0014971050626515492
+    },
+    {
+      "tag": "v11_mulminet_aug_avg3",
+      "class": "B-impure (R-055 LB-fail)",
+      "full_auc": 0.5700314849436464,
+      "holdout_auc": 0.5541152146351408,
+      "delta": -0.01591627030850562
+    },
+    {
+      "tag": "v14_seed2_v16match_v2",
+      "class": "B-player-style (R-062r LB-fail)",
+      "full_auc": 0.6061727271919598,
+      "holdout_auc": 0.605097065079583,
+      "delta": -0.0010756621123767518
+    },
+    {
+      "tag": "v14_seed2_v15feat_c_oldtest",
+      "class": "B-feature variant (untested LB)",
+      "full_auc": 0.6036752308681017,
+      "holdout_auc": 0.6108651466060253,
+      "delta": 0.007189915737923602
+    }
+  ],
+  "R034_PAIR_full_AUC": 0.6134116967596248,
+  "R034_PAIR_holdout_AUC": 0.6178219075043188,
+  "R034_PAIR_full_OV": 0.37889832922662336,
+  "R034_PAIR_holdout_OV": 0.38400214880865385,
+  "R034_PAIR_holdout_delta": 0.005103819582030489
+}

@@ -1,0 +1,15 @@
+{
+  "rid": "R062",
+  "swap_in": "v14_seed2_v16match_v2",
+  "slot": "v14_seed2_v15feat_a",
+  "OV": 0.38231646174020006,
+  "dOV_vs_R034": 0.003729558929038701,
+  "F1_a": 0.41322523132015176,
+  "F1_p": 0.23645652775245943,
+  "AUC": 0.6122187905557779,
+  "pred_LB_plus_rule_lo": 0.3864545693562908,
+  "pred_LB_plus_rule_hi": 0.39054535549691094,
+  "submission_plus_rule": "submission_R062r_v16match_v2_PLUS_RULE.csv",
+  "R034_baseline_OV": 0.37858690281116136,
+  "rule_override_changes": 8
+}

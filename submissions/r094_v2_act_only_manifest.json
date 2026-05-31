@@ -1,0 +1,22 @@
+{
+  "rid": "R-094-v2",
+  "ts": "2026-05-26",
+  "alpha_action": 0.05,
+  "alpha_point": 0.0,
+  "base_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R067cr_alpha030_v22_blend_PLUS_RULE.csv",
+  "raw_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R094v2_R067cr_PLUS_SOFTF1_act_only_alpha005.csv",
+  "output_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R094v2_R067cr_PLUS_SOFTF1_act_only_alpha005_PLUS_RULE.csv",
+  "n_action_diffs_vs_base": 38,
+  "n_point_diffs_vs_base": 0,
+  "predicted_f1a_delta": 0.0006,
+  "predicted_f1p_delta": 0.0,
+  "v04_candidate_report": {
+    "theoretical_generalization_reason": "v1 sweep showed action benefits from SoftF1 mixing (F1_a peak at alpha=0.05) but point does not (F1_p flat across all alphas). v2 decouples per-task alpha: action 0.05, point 0.00 (preserve R-067cr point exactly). Less LB risk (smaller diff count) for same expected lift.",
+    "why_transfers_to_test_new": "Same as v1 \u2014 SoftF1 is training-objective change, not feature change. Action-only blend is even more conservative than v1: only action predictions changed, point untouched.",
+    "smoke_sanity_pass": true,
+    "lb_probe_worthy": true,
+    "lb_confirm_hypothesis": "LB \u0394OV >= +0.0003 => action-only SoftF1 additive transfers.",
+    "lb_reject_hypothesis": "LB \u0394OV <= -0.003 => additive B-impure at low weight also fails.",
+    "predicted_lb_delta": "+0.0003 to +0.0008 (B-feature 0.9x \u00d7 +0.0006 F1_a \u00d7 0.4 OV weight)"
+  }
+}

@@ -1,0 +1,193 @@
+{
+  "rid": "R-072",
+  "ts": "2026-05-25",
+  "input": "submissions/submission_R067cr_alpha030_v22_blend_PLUS_RULE.csv",
+  "output": "submissions/submission_R072_R067cr_PLUS_RULE_V2.csv",
+  "train": "data/train.csv",
+  "test": "data/test_new.csv",
+  "per_layer_stats": {
+    "A": {
+      "n_action_contexts": 324,
+      "n_point_contexts": 324,
+      "n_action_overrides": 0,
+      "n_point_overrides": 0
+    },
+    "B": {
+      "n_action_contexts": 424,
+      "n_point_contexts": 424,
+      "n_action_overrides": 2,
+      "n_point_overrides": 0
+    },
+    "C": {
+      "n_action_contexts": 439,
+      "n_point_contexts": 439,
+      "n_action_overrides": 3,
+      "n_point_overrides": 1
+    },
+    "D": {
+      "n_action_contexts": 379,
+      "n_point_contexts": 379,
+      "n_action_overrides": 3,
+      "n_point_overrides": 2
+    }
+  },
+  "total_overrides": 11,
+  "total_action_overrides": 8,
+  "total_point_overrides": 3,
+  "all_changes": [
+    {
+      "layer": "B",
+      "rally_uid": 19057,
+      "target": "actionId",
+      "from": 13,
+      "to": 5,
+      "context_n": 30,
+      "context_key": [
+        1,
+        6,
+        5,
+        7
+      ]
+    },
+    {
+      "layer": "B",
+      "rally_uid": 20706,
+      "target": "actionId",
+      "from": 1,
+      "to": 6,
+      "context_n": 35,
+      "context_key": [
+        6,
+        6,
+        5,
+        8
+      ]
+    },
+    {
+      "layer": "C",
+      "rally_uid": 17164,
+      "target": "actionId",
+      "from": 8,
+      "to": 10,
+      "context_n": 254,
+      "context_key": [
+        2,
+        10,
+        10,
+        8
+      ]
+    },
+    {
+      "layer": "C",
+      "rally_uid": 18672,
+      "target": "actionId",
+      "from": 2,
+      "to": 6,
+      "context_n": 40,
+      "context_key": [
+        1,
+        16,
+        1,
+        9
+      ]
+    },
+    {
+      "layer": "C",
+      "rally_uid": 20071,
+      "target": "actionId",
+      "from": 8,
+      "to": 1,
+      "context_n": 40,
+      "context_key": [
+        2,
+        16,
+        10,
+        8
+      ]
+    },
+    {
+      "layer": "C",
+      "rally_uid": 20538,
+      "target": "pointId",
+      "from": 4,
+      "to": 0,
+      "context_n": 80,
+      "context_key": [
+        2,
+        15,
+        11,
+        1
+      ]
+    },
+    {
+      "layer": "D",
+      "rally_uid": 15694,
+      "target": "pointId",
+      "from": 4,
+      "to": 9,
+      "context_n": 47,
+      "context_key": [
+        1,
+        15,
+        11,
+        1
+      ]
+    },
+    {
+      "layer": "D",
+      "rally_uid": 20076,
+      "target": "actionId",
+      "from": 12,
+      "to": 2,
+      "context_n": 33,
+      "context_key": [
+        1,
+        15,
+        4,
+        5
+      ]
+    },
+    {
+      "layer": "D",
+      "rally_uid": 20179,
+      "target": "actionId",
+      "from": 12,
+      "to": 2,
+      "context_n": 25,
+      "context_key": [
+        0,
+        1,
+        6,
+        4
+      ]
+    },
+    {
+      "layer": "D",
+      "rally_uid": 20235,
+      "target": "actionId",
+      "from": 8,
+      "to": 1,
+      "context_n": 128,
+      "context_key": [
+        1,
+        15,
+        10,
+        7
+      ]
+    },
+    {
+      "layer": "D",
+      "rally_uid": 20503,
+      "target": "pointId",
+      "from": 4,
+      "to": 9,
+      "context_n": 47,
+      "context_key": [
+        1,
+        15,
+        11,
+        1
+      ]
+    }
+  ]
+}

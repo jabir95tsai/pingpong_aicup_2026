@@ -1,0 +1,65 @@
+{
+  "rid": "R-094",
+  "ts": "2026-05-26",
+  "base_blend": "R-067cr (R-034 PAIR Dirichlet + rule_override + v22 SGP alpha=0.30)",
+  "additive_component": "v11_mulminet_aug_oldtest_softf1_phaseB",
+  "alpha_sweep": [
+    {
+      "alpha": 0.0,
+      "F1_a": 0.41214977399006647,
+      "F1_p": 0.2283902006966795,
+      "OV_2task": 0.320269987343373
+    },
+    {
+      "alpha": 0.05,
+      "F1_a": 0.4127333127281734,
+      "F1_p": 0.22822663979756608,
+      "OV_2task": 0.3204799762628697
+    },
+    {
+      "alpha": 0.1,
+      "F1_a": 0.4114271719881573,
+      "F1_p": 0.22833218788697876,
+      "OV_2task": 0.31987967993756805
+    },
+    {
+      "alpha": 0.15,
+      "F1_a": 0.41044323979851477,
+      "F1_p": 0.2283200265753726,
+      "OV_2task": 0.3193816331869437
+    },
+    {
+      "alpha": 0.2,
+      "F1_a": 0.40963130295579336,
+      "F1_p": 0.2282238659329258,
+      "OV_2task": 0.3189275844443596
+    },
+    {
+      "alpha": 0.25,
+      "F1_a": 0.40891210029299935,
+      "F1_p": 0.22794688220656023,
+      "OV_2task": 0.3184294912497798
+    },
+    {
+      "alpha": 0.3,
+      "F1_a": 0.4085107217806617,
+      "F1_p": 0.22772294407076643,
+      "OV_2task": 0.3181168329257141
+    }
+  ],
+  "best_alpha": 0.05,
+  "delta_F1_a_at_best": 0.0005835387381069035,
+  "delta_F1_p_at_best": -0.00016356089911342964,
+  "canary_class_drops": [],
+  "smoke_sanity_pass": true,
+  "artifact_ready_for_jabir_upload_review": true,
+  "output_csv": "C:\\Users\\jabir\\Hacker_J\\pingpong_aicup_2026\\submissions\\submission_R094_R067cr_PLUS_SOFTF1_alpha005_PLUS_RULE.csv",
+  "v04_candidate_report": {
+    "theoretical_generalization_reason": "R-031 trained v11_mulminet_aug_oldtest with soft-F1 loss directly targeting macro-F1. Adding it at small weight as 6th component is structurally novel (size-6 cap relax is documented strategic lever per LESSONS but never LB-tested). Targets known rare-class weakness.",
+    "why_transfers_to_test_new": "SoftF1 is training-objective change, not feature change. Same data, same distribution behavior. Macro-F1-targeted training should generalize equally to test_new. Risk: MuLMINet arch is structurally different (B-impure triggered swap failures in R-028/R-040), but additive at small weight reduces exposure vs swap.",
+    "smoke_sanity_pass": true,
+    "lb_probe_worthy": true,
+    "lb_confirm_hypothesis": "LB DeltaOV >= +0.001 => SoftF1 additive at small weight transfers; size-6 cap relax is viable.",
+    "lb_reject_hypothesis": "LB DeltaOV <= -0.005 => additive B-impure also fails; cap relax closed."
+  }
+}

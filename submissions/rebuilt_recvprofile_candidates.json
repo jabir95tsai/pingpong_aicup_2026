@@ -1,0 +1,25 @@
+{
+  "candidates": [
+    {
+      "rid": "R060",
+      "swap_in": "v14_recvprofile",
+      "desc": "v14_recvprofile NO-oldtest (audit dOV +0.0007 \u2014 corrected variant)",
+      "OV": 0.3788477140697862,
+      "dOV_vs_R034": 0.0002608112586248157,
+      "pred_LB_plus_rule_lo": 0.38297368106903046,
+      "pred_LB_plus_rule_hi": 0.3870273516095772,
+      "submission_plus_rule": "submission_R060r_v14_recvprofile_PLUS_RULE.csv"
+    },
+    {
+      "rid": "R061",
+      "swap_in": "v14_recvhand",
+      "desc": "v14_recvhand NO-oldtest (audit-listed B-feature, retesting)",
+      "OV": 0.37952738718109347,
+      "dOV_vs_R034": 0.0009404843699321042,
+      "pred_LB_plus_rule_lo": 0.38365573303622735,
+      "pred_LB_plus_rule_hi": 0.387716676079065,
+      "submission_plus_rule": "submission_R061r_v14_recvhand_PLUS_RULE.csv"
+    }
+  ],
+  "R034_baseline_OV": 0.37858690281116136
+}

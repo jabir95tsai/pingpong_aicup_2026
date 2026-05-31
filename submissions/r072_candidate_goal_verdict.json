@@ -1,0 +1,59 @@
+{
+  "candidate": {
+    "rid": "R-072-rule-override-v2",
+    "name": "R-067cr + multi-layer rule_override v2 (11 new overrides)",
+    "tier": "T1",
+    "class": "rule_override",
+    "stage": "ready-for-lb",
+    "oof_delta": {
+      "OV": 0.0015
+    },
+    "guards": {
+      "uses_test_sgp_truth": false,
+      "overwrites_test_sgp_truth": false,
+      "sgp_derived_proxy": false,
+      "forbidden_rally_uid_inference": false,
+      "teammate_leak_artifact": false,
+      "external_leak_data": false,
+      "oof_test_alignment_validated": true,
+      "rule_override_applied": true,
+      "rule_override_applicable": true,
+      "codex_smoke_approved": true,
+      "codex_5fold_approved": true,
+      "p11_directly_optimized": false
+    },
+    "compute_cost_hours": 0.5,
+    "novelty": "medium"
+  },
+  "verdict": {
+    "rid": "R-072-rule-override-v2",
+    "hard_block": false,
+    "block_reason": "",
+    "expected_lb_delta": 0.0015,
+    "goal_score": 0.0019125,
+    "risk_level": "LOW",
+    "leakage_risk": "LOW",
+    "public_lb_overfit_risk": "LOW",
+    "generalization_score": 0.65,
+    "priority": "NORMAL",
+    "target_progress_ratio": 0.11546899657441963,
+    "recommended_action": "SUBMIT_CANDIDATE",
+    "explanation": "class=rule_override | OOF_OV=+0.0015 | xfer=1.00 | pre=+0.0015 | novelty=+0.0003 | expLB=+0.0015 | progress=+11.5% | gen=0.65 | leak=LOW | pubLBoverfit=LOW | priority=NORMAL",
+    "_diag": {
+      "base_lift_OV": 0.0015,
+      "transfer_multiplier": 1.0,
+      "slice_penalty": 0.0,
+      "holdout_signal": 0.0,
+      "compute_penalty": 0.0,
+      "novelty_bonus": 0.0003,
+      "anchor_lb": 0.3870095,
+      "target_lb": 0.4,
+      "current_gap_to_target": 0.012990500000000016,
+      "target_progress_ratio": 0.11546899657441963,
+      "implied_predicted_lb": 0.3885095,
+      "generalization_score": 0.65,
+      "gen_boost": 0.00011250000000000002
+    }
+  },
+  "estimate_basis": "conservative per-override extrapolation from R-042 (10 overrides -> +0.0028 LB), halved for deeper/hand/position-context uncertainty"
+}

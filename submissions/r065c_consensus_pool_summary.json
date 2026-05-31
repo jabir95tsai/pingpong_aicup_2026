@@ -1,0 +1,97 @@
+{
+  "stage": "R-065c candidate parquet",
+  "ts": "2026-05-23",
+  "teachers": [
+    "gbm_cluster",
+    "v11_uncertainty_aug",
+    "v11",
+    "v11_aug",
+    "v11_aug_oldtest",
+    "v11plus_oldtest"
+  ],
+  "teacher_count": 6,
+  "gbm_cluster_members": [
+    "v14_seed2_v15feat_a",
+    "v13_oldtest",
+    "v16_testhist_aug_oldtest",
+    "v14_seed2_v16match_v2"
+  ],
+  "transformer_teachers": [
+    "v11_uncertainty_aug",
+    "v11",
+    "v11_aug",
+    "v11_aug_oldtest",
+    "v11plus_oldtest"
+  ],
+  "thresholds": {
+    "min_agree_count": 4,
+    "action_top1_min": 0.55,
+    "action_sep_min": 0.08,
+    "action_skip_classes": [
+      15,
+      16,
+      17,
+      18
+    ],
+    "point_top1_min": 0.4,
+    "point_sep_min": 0.05,
+    "point_skip_classes": [
+      0
+    ],
+    "class_cap_pct": 0.3,
+    "pseudo_weight": 0.1
+  },
+  "test_uid_count": 1845,
+  "test_uid_sha256_16": "3b9e3138093963a5",
+  "n_action_kept_raw": 173,
+  "n_action_kept_after_cap": 138,
+  "n_action_dropped_by_cap": 35,
+  "n_point_kept_raw": 53,
+  "n_point_kept_after_cap": 33,
+  "n_point_dropped_by_cap": 20,
+  "pool_floor_total_pass": true,
+  "pool_floor_each_pass": false,
+  "action_kept_uids_sha256_16": "08c83bce697cd212",
+  "point_kept_uids_sha256_16": "212f101fa63fa007",
+  "deterministic_cap_rank_fields": [
+    "top1_p desc",
+    "sep desc",
+    "agree_count desc",
+    "rally_uid asc"
+  ],
+  "default_pseudo_weight": 0.1,
+  "schema": [
+    "rally_uid (int)",
+    "pseudo_actionId (int, -1 if not kept_action)",
+    "pseudo_pointId (int, -1 if not kept_point)",
+    "act_top1_p (float)",
+    "act_sep (float)",
+    "act_agree_count (int)",
+    "pt_top1_p (float)",
+    "pt_sep (float)",
+    "pt_agree_count (int)",
+    "kept_action (bool)",
+    "kept_point (bool)",
+    "kept (bool)",
+    "serverGetPoint (int, always -1 sentinel)"
+  ],
+  "action_class_distribution": {
+    "1": 51,
+    "2": 3,
+    "3": 6,
+    "4": 5,
+    "7": 5,
+    "8": 5,
+    "9": 29,
+    "11": 16,
+    "12": 9,
+    "14": 9
+  },
+  "point_class_distribution": {
+    "1": 15,
+    "2": 15,
+    "3": 2,
+    "6": 1
+  },
+  "stop_gate_verdict": "action_only_fallback"
+}

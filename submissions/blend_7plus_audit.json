@@ -1,0 +1,488 @@
+{
+  "baseline_ov": 0.37918829463846815,
+  "results": [
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v11_mulminet_aug_avg3"
+      ],
+      "ov": 0.3832823380297469,
+      "dov": 0.004094043391278779,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_mulminet_aug_avg3",
+        "v14_seed2_oldtest"
+      ],
+      "ov": 0.38248710018577303,
+      "dov": 0.003298805547304884,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack",
+        "v11_mulminet_aug_avg3"
+      ],
+      "ov": 0.3824610337135994,
+      "dov": 0.003272739075131259,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v11_aug_big",
+        "v14_recvprofile"
+      ],
+      "ov": 0.38239234836433506,
+      "dov": 0.0032040537258669066,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_mulminet_aug_avg3",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.3823760019190674,
+      "dov": 0.00318770728059925,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_aug_big",
+        "v11_mulminet_aug_avg3"
+      ],
+      "ov": 0.3821425321764695,
+      "dov": 0.0029542375380013364,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v11_aug_big"
+      ],
+      "ov": 0.38208700519070576,
+      "dov": 0.0028987105522376155,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_seed2_v15feat_c_oldtest",
+        "v11_mulminet_aug_avg3"
+      ],
+      "ov": 0.3820338507223388,
+      "dov": 0.0028455560838706595,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v11_aug_big",
+        "v14_recvhand"
+      ],
+      "ov": 0.3819169165605226,
+      "dov": 0.002728621922054475,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 10,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "meta_stack",
+        "v11_aug_big",
+        "v14_recvprofile",
+        "v14_recvhand"
+      ],
+      "ov": 0.38181360718824775,
+      "dov": 0.0026253125497796015,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvhand",
+        "v11_mulminet_aug_avg3"
+      ],
+      "ov": 0.3816815105765222,
+      "dov": 0.002493215938054072,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvprofile",
+        "v11_mulminet_aug_avg3"
+      ],
+      "ov": 0.38167308218370755,
+      "dov": 0.0024847875452393975,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack",
+        "v11_aug_big",
+        "v14_recvprofile"
+      ],
+      "ov": 0.3813778233342414,
+      "dov": 0.0021895286957732685,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v14_seed2_oldtest"
+      ],
+      "ov": 0.38132549998698345,
+      "dov": 0.002137205348515303,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack",
+        "v11_aug_big"
+      ],
+      "ov": 0.38129582848868987,
+      "dov": 0.002107533850221721,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v14_seed2_v15feat_c_oldtest"
+      ],
+      "ov": 0.38122743084036825,
+      "dov": 0.0020391362019001047,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.3810676503318075,
+      "dov": 0.0018793556933393574,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack",
+        "v11_aug_big",
+        "v14_recvhand"
+      ],
+      "ov": 0.3810478315162086,
+      "dov": 0.0018595368777404309,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "meta_stack",
+        "v11_aug_big"
+      ],
+      "ov": 0.38101708139247215,
+      "dov": 0.001828786754003997,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack",
+        "v14_seed2_v15feat_c_oldtest"
+      ],
+      "ov": 0.38097315866832004,
+      "dov": 0.0017848640298518959,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "meta_stack"
+      ],
+      "ov": 0.3808556152829677,
+      "dov": 0.001667320644499537,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack",
+        "v14_seed2_oldtest"
+      ],
+      "ov": 0.38083459392060787,
+      "dov": 0.0016462992821397182,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v14_recvprofile"
+      ],
+      "ov": 0.38082084601361305,
+      "dov": 0.0016325513751448972,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "meta_stack",
+        "v14_recvprofile"
+      ],
+      "ov": 0.38077393739867604,
+      "dov": 0.0015856427602078949,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v14_recvprofile",
+        "v14_recvhand"
+      ],
+      "ov": 0.3807709341726556,
+      "dov": 0.0015826395341874688,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.3807693231972544,
+      "dov": 0.0015810285587862238,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "v14_recvhand"
+      ],
+      "ov": 0.38072048303851985,
+      "dov": 0.0015321884000517039,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack_v2_logistic",
+        "meta_stack",
+        "v14_recvhand"
+      ],
+      "ov": 0.3806606044981632,
+      "dov": 0.0014723098596950424,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "meta_stack",
+        "v14_recvprofile",
+        "v14_recvhand"
+      ],
+      "ov": 0.38052784345142227,
+      "dov": 0.0013395488129541167,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_aug_big",
+        "v14_seed2_v15feat_c_oldtest"
+      ],
+      "ov": 0.38043150039519985,
+      "dov": 0.0012432057567317023,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack",
+        "v14_recvprofile"
+      ],
+      "ov": 0.3802393969264934,
+      "dov": 0.0010511022880252407,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "meta_stack",
+        "v14_recvhand"
+      ],
+      "ov": 0.38020724749856066,
+      "dov": 0.0010189528600925146,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 8,
+      "adds": [
+        "v11_aug_big",
+        "v14_recvprofile",
+        "v14_recvhand"
+      ],
+      "ov": 0.38004447236011923,
+      "dov": 0.0008561777216510857,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_aug_big",
+        "v14_seed2_oldtest"
+      ],
+      "ov": 0.37996014835611513,
+      "dov": 0.0007718537176469864,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_aug_big",
+        "v14_recvhand"
+      ],
+      "ov": 0.37991022224812054,
+      "dov": 0.0007219276096523952,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_aug_big",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.37983756459904794,
+      "dov": 0.0006492699605797903,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v11_aug_big",
+        "v14_recvprofile"
+      ],
+      "ov": 0.3797576935951103,
+      "dov": 0.0005693989566421531,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvhand",
+        "v14_seed2_oldtest"
+      ],
+      "ov": 0.37942188571621094,
+      "dov": 0.00023359107774278964,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvprofile",
+        "v14_seed2_oldtest"
+      ],
+      "ov": 0.37936918834543243,
+      "dov": 0.0001808937069642802,
+      "label": "STAGE_1"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvprofile",
+        "v14_recvhand"
+      ],
+      "ov": 0.3791491282951366,
+      "dov": -3.916634333156477e-05,
+      "label": "STAGE_2"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvprofile",
+        "v14_seed2_v15feat_c_oldtest"
+      ],
+      "ov": 0.3791308238767214,
+      "dov": -5.747076174672516e-05,
+      "label": "STAGE_2"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvhand",
+        "v14_seed2_v15feat_c_oldtest"
+      ],
+      "ov": 0.3791076317074393,
+      "dov": -8.066293102887423e-05,
+      "label": "STAGE_2"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvhand",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.3790805808832878,
+      "dov": -0.00010771375518037196,
+      "label": "STAGE_2"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_seed2_v15feat_c_oldtest",
+        "v14_seed2_oldtest"
+      ],
+      "ov": 0.3789886373929035,
+      "dov": -0.00019965724556464393,
+      "label": "STAGE_2"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_recvprofile",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.37893341073317627,
+      "dov": -0.00025488390529188054,
+      "label": "STAGE_2"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_seed2_oldtest",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.378889583761096,
+      "dov": -0.00029871087737215474,
+      "label": "STAGE_2"
+    },
+    {
+      "n": 7,
+      "adds": [
+        "v14_seed2_v15feat_c_oldtest",
+        "v14_seed2_v15feat_b_oldtest"
+      ],
+      "ov": 0.3788552351787938,
+      "dov": -0.00033305945967432304,
+      "label": "STAGE_2"
+    }
+  ]
+}

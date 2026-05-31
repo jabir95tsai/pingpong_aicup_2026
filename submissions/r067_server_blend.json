@@ -1,0 +1,14 @@
+{
+  "rid": "R-067",
+  "ts": "2026-05-24",
+  "R042_LB": 0.3866,
+  "R042_R034_baseline_AUC_OOF": 0.6134116967596248,
+  "v22_AUC_OOF_per_rally": 0.6873439183617135,
+  "alpha_sweep": [],
+  "best_alpha": 1.0,
+  "best_auc": NaN,
+  "submissions": {
+    "R-067a_full_replace": "submission_R067ar_v22srv_replace_PLUS_RULE.csv",
+    "R-067b_best_alpha": "submission_R067br_alpha10_v22srv_blend_PLUS_RULE.csv"
+  }
+}
