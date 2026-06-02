@@ -159,3 +159,15 @@ patch added the branch but not the choice). Not re-run: expected upside tiny
 AutoGluon ensemble, so a marginal decorrelated feature isn't worth the cycle.
 Code retained (features_v9_recvside.py, train_v14.py branch) if revisited; the
 argparse choices list still needs v9_recvside added to be runnable.
+
+## AutoGluon meta-stack — LB_FAIL 0.3152 (2026-06-02)
+Clean AutoGluon stack of the 6 components (f1_macro/roc_auc metrics correct,
+v22 server @0.30). AutoGluon internal validation OV = 0.4149 — but real LB
+= **0.3152 (267/423)**, a −0.10 collapse. CAUSE: AutoGluon's random (non-
+match-grouped) holdout let the stacker memorize within-match correlation in
+the OOF meta-features that does not exist train→test → catastrophic overfit;
+worse than any single component (~0.38). point class-9 over-predicted 54%
+(sanity warning) confirmed. LESSON: meta-stacking OOF predictions REQUIRES
+match-grouped CV (pass groups to AutoGluon); random holdout is wildly
+optimistic (+0.10) here. FINAL DECISION: keep R-067cr (0.3870095, clean,
+LB-verified) as the final submission.

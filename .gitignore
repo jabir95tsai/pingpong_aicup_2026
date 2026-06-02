@@ -68,3 +68,6 @@ data/*_distribution.json
 # Nested data/array blobs (code/docs-only repo)
 *.npz
 audits/package_v8_0.4419_20260521/data/
+
+# AutoGluon saved predictors (large, local only)
+AutogluonModels/
